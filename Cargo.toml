@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = ["monad-*"]
+exclude = ["monad-execution", "monad-fuzz", "monad-scripts"]
+
+[workspace.metadata.cargo-shear]
+ignored = ["alloy-transport-http", "getrandom", "monad-peer-disc-swarm"]
+
+[workspace.dependencies]
+monad-archive = { path = "./monad-archive" }
+
+monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+monad-eth-types    = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+monad-triedb-utils = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+monad-types        = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+
+alloy-consensus = "2.0"
+alloy-eips = "2.0"
+alloy-primitives = "1.5"
+alloy-rlp = { version = "0.3", features = ["arrayvec"] }
+alloy-rpc-types = { version = "2.0", default-features = false, features = ["eth"] }
+alloy-signer = "2.0"
+alloy-signer-local = "2.0"
+aws-config = "1.8.13"
+aws-sdk-dynamodb = { version = "1.104.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
+aws-sdk-s3 = { version = "1.122.0", default-features = false, features = ["behavior-version-latest", "sigv4a", "rt-tokio", "default-https-client"] }
+base64 = "0.22.1"
+bytes = "1.5"
+chrono = "0.4.34"
+clap = "4.2"
+dashmap = "6.1.0"
+enum_dispatch = "0.3.13"
+eyre = "0.6.12"
+futures = "0.3"
+hex = "0.4"
+humantime = "2.1"
+mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
+opentelemetry = "0.31"
+opentelemetry-otlp = "0.31"
+opentelemetry-semantic-conventions = "0.29"
+opentelemetry_sdk = "0.31"
+rayon = "1.7"
+regex = "1.10.2"
+reqwest = { version = "0.12.28", features = ["json"] }
+serde = "1.0"
+serde_json = "1.0"
+tempfile = "3.5"
+tokio = { version = "1.39", features = ["sync"] }
+tokio-retry = "0.3.0"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = "2.5.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+debug = true
+lto = "thin"
+panic = "abort"

@@ -1,0 +1,28 @@
+name: License
+
+on:
+  merge_group:
+    branches: ["main"]
+    paths-ignore:
+      - 'debian/**'
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - 'debian/**'
+  pull_request:
+    types: [ opened, synchronize, reopened, edited ]
+    paths-ignore:
+      - 'debian/**'
+
+permissions:
+  contents: read
+
+jobs:
+  check-license:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check licenses
+        run: .github/workflows/license.sh
