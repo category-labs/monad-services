@@ -1,0 +1,5 @@
+faults.json
+.*
+!/.gitignore
+
+tmp/
