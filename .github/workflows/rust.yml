@@ -1,0 +1,128 @@
+name: Rust
+
+on:
+  merge_group:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  pull_request:
+    types: [ opened, synchronize, reopened, edited ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >
+    ${{
+      github.event_name == 'merge_group'
+      && format('merge-group-{0}-rust', github.run_id)
+      ||
+        github.event_name == 'pull_request'
+        && format('pr-{0}-rust', github.event.pull_request.number)
+        || format('push-{0}-rust', github.ref)
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+  ASMFLAGS: -march=haswell
+  CC: gcc-15
+  CFLAGS: -march=haswell
+  CXX: g++-15
+  CXXFLAGS: -march=haswell
+  RUSTFLAGS: -C target-cpu=haswell
+  TRIEDB_TARGET: triedb_driver
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update && sudo apt-get install -y \
+            libboost-fiber1.83.0 \
+            libboost-json1.83.0 \
+            libboost-stacktrace1.83.0 \
+            libboost-fiber1.83-dev \
+            libboost-json1.83-dev \
+            libboost-stacktrace1.83-dev \
+            libboost1.83-dev \
+            libbenchmark-dev \
+            libcgroup-dev \
+            libgmock-dev \
+            libgtest-dev \
+            libtbb-dev \
+            liburing-dev \
+            libarchive-dev \
+            libbrotli-dev \
+            libcap-dev \
+            libcli11-dev \
+            libcrypto++-dev \
+            libgmp-dev \
+            libzstd-dev \
+            clang-19 \
+            libclang-19-dev \
+            gcc-15 \
+            g++-15 \
+            libhugetlbfs-dev \
+            libmagicenum-dev
+
+      - run: rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
+      - run: rustup toolchain install 1.91.1-x86_64-unknown-linux-gnu --profile minimal --component clippy
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.15.7
+
+      - name: Install tools
+        run: cargo binstall --no-confirm cargo-shear cargo-sort
+
+      - name: Verify lockfile
+        run: cargo update --workspace --locked
+
+      - name: Format TOML
+        run: cargo sort --workspace --grouped --check
+
+      - name: Format
+        run: cargo +nightly-2025-12-09 fmt --all --check
+
+      - name: Lint unused dependencies (cargo-shear)
+        run: cargo shear
+
+      - name: Lint
+        run: cargo clippy --all-targets --all-features --
+          -D clippy::suspicious
+          -D clippy::style
+          -D clippy::clone_on_copy
+          -D clippy::redundant_clone
+          -D clippy::iter_kv_map
+          -D clippy::iter_nth
+          -D clippy::unnecessary_cast
+          -D clippy::filter_next
+          -D clippy::needless_lifetimes
+          -D clippy::useless_conversion
+          -D clippy::useless_vec
+          -D clippy::needless_question_mark
+          -D clippy::bool_comparison
+          -D unused_imports
+          -D unused_parens
+          -D deprecated
+          -A clippy::type_complexity
+          -A clippy::int_plus_one
+          -A clippy::uninlined-format-args
+          -A clippy::enum-variant-names
+          -A clippy::mutable_key_type
+          -A clippy::large_enum_variant
+          -A clippy::doc-overindented-list-items
+
+      - name: Run tests
+        run: |
+          cargo test --release --all-targets --all-features
