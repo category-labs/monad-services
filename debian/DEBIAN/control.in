@@ -1,0 +1,10 @@
+Package: monad-services
+Version: @PACKAGE_VERSION@
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Category Labs <engineering@category.xyz>
+Depends: ca-certificates, libgcc-s1, libssl3t64, libstdc++6, zlib1g
+Description: Monad archive and indexing services
+ Archive, validation, indexing, and block-writing binaries maintained by the
+ monad-services repository.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Monad Archiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monad
+Group=monad
+EnvironmentFile=-/home/monad/.env
+ExecStart=/usr/local/bin/monad-archiver
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
