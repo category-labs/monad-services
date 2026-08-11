@@ -2,16 +2,10 @@
 set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-version=${PACKAGE_VERSION:-}
 output_dir=${DEB_OUTPUT_DIR:-"$root_dir/dist"}
 stage_dir="$root_dir/target/debian/monad-services"
 
-if [ -z "$version" ]; then
-  sha=$(git -C "$root_dir" rev-parse --short=12 HEAD)
-  timestamp=$(git -C "$root_dir" log -1 --format=%cd --date=format:%Y%m%d%H%M)
-  version="0.0-${timestamp}-${sha}"
-fi
-
+version=${PACKAGE_VERSION:-$("$root_dir/scripts/package-version")}
 case "$version" in
   *[!0-9A-Za-z.+:~\-]*) echo "Invalid Debian version: $version" >&2; exit 2 ;;
 esac
@@ -19,11 +13,6 @@ esac
 if [ ! -f "$root_dir/monad-execution/CMakeLists.txt" ]; then
   echo "Initializing the pinned monad-execution submodule..." >&2
   git -C "$root_dir" submodule update --init --recursive monad-execution
-fi
-
-if [ ! -f "$root_dir/monad-execution/CMakeLists.txt" ]; then
-  echo "monad-execution was not initialized successfully" >&2
-  exit 2
 fi
 
 cd "$root_dir"
@@ -37,11 +26,15 @@ for binary in monad-archiver monad-archive-checker monad-indexer monad-block-wri
   install -m 0755 "target/release/$binary" "$stage_dir/usr/local/bin/$binary"
 done
 
-# monad-triedb and its execution bindings are built by Cargo build scripts. Keep
-# their complete shared-library closure with the services, as the existing BFT
-# package does, rather than relying on an undeclared host installation.
-find target/release/build \( -type f -o -type l \) -name '*.so*' \
-  -exec cp -a {} "$stage_dir/usr/local/lib/" \;
+# Ship libtriedb_driver.so plus its link closure of build-script-produced
+# shared objects, as the BFT package does. A blanket copy of
+# target/release/build would also pick up stale libraries left behind in
+# cached/incremental target directories.
+triedb=$(find target/release -name 'libtriedb_driver.so' -exec ls -Lt {} + | head -n 1)
+test -n "$triedb" || { echo "libtriedb_driver.so not found under target/release" >&2; exit 2; }
+cp "$triedb" "$stage_dir/usr/local/lib/"
+ldd "$triedb" | scripts/filter-dependent-shared-objects.py | sort -u \
+  | xargs -I {} cp {} "$stage_dir/usr/local/lib/"
 
 # Follow the same staging model as monad-integration's runtime image: resolve
 # the binaries' complete non-glibc shared-library closure and copy it by SONAME.

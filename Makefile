@@ -1,7 +1,9 @@
 SHELL := /bin/sh
 
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-PACKAGE_VERSION ?= 0.0-$(shell git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(shell git rev-parse --short=12 HEAD)
+ifeq ($(origin PACKAGE_VERSION),undefined)
+PACKAGE_VERSION := $(shell ./scripts/package-version)
+endif
 DEB_OUTPUT_DIR ?= dist
 
 .PHONY: build deb deb-container clean
