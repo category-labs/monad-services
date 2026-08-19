@@ -1,13 +1,18 @@
 [workspace]
 resolver = "2"
 members = ["monad-*"]
-exclude = ["monad-execution", "monad-fuzz", "monad-scripts"]
-
-[workspace.metadata.cargo-shear]
-ignored = ["alloy-transport-http", "getrandom", "monad-peer-disc-swarm"]
 
 [workspace.dependencies]
-monad-archive = { path = "./monad-archive" }
+monad-archive          = { path = "./monad-archive" }
+monad-query-config     = { path = "./monad-query-config" }
+monad-query-engine     = { path = "./monad-query-engine" }
+monad-query-errors     = { path = "./monad-query-errors" }
+monad-query-indexer    = { path = "./monad-query-indexer" }
+monad-query-primitives = { path = "./monad-query-primitives" }
+monad-query-read       = { path = "./monad-query-read" }
+monad-query-store      = { path = "./monad-query-store" }
+monad-query-types      = { path = "./monad-query-types" }
+monad-query-write      = { path = "./monad-query-write" }
 
 monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
 monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
@@ -20,12 +25,14 @@ alloy-eips = "2.0"
 alloy-primitives = "1.5"
 alloy-rlp = { version = "0.3", features = ["arrayvec"] }
 alloy-rpc-types = { version = "2.0", default-features = false, features = ["eth"] }
+alloy-rpc-types-eth = "2.0"
 alloy-signer = "2.0"
 alloy-signer-local = "2.0"
 aws-config = "1.8.13"
 aws-sdk-dynamodb = { version = "1.104.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
 aws-sdk-s3 = { version = "1.122.0", default-features = false, features = ["behavior-version-latest", "sigv4a", "rt-tokio", "default-https-client"] }
 base64 = "0.22.1"
+blake3 = "1.5"
 bytes = "1.5"
 chrono = "0.4.34"
 clap = "4.2"
@@ -35,23 +42,29 @@ eyre = "0.6.12"
 futures = "0.3"
 hex = "0.4"
 humantime = "2.1"
+itertools = "0.13"
 mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
+num_enum = "=0.7.6"
 opentelemetry = "0.31"
 opentelemetry-otlp = "0.31"
 opentelemetry-semantic-conventions = "0.29"
 opentelemetry_sdk = "0.31"
+quick_cache = "0.6"
+rand = "0.8"
 rayon = "1.7"
 regex = "1.10.2"
 reqwest = { version = "0.12.28", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 tempfile = "3.5"
+thiserror = "1.0"
 tokio = { version = "1.39", features = ["sync"] }
 tokio-retry = "0.3.0"
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 url = "2.5.0"
+zstd = "0.13"
 
 [profile.dev]
 opt-level = 1
