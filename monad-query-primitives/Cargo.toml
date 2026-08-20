@@ -1,0 +1,12 @@
+[package]
+name = "monad-query-primitives"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+bytes = { workspace = true }
+itertools = { workspace = true }
+num_enum = { workspace = true }
+thiserror = { workspace = true }

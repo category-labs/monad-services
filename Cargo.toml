@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = ["monad-*"]
-exclude = ["monad-execution", "monad-fuzz", "monad-scripts"]
 
 [workspace.metadata.cargo-shear]
-ignored = ["alloy-transport-http", "getrandom", "monad-peer-disc-swarm"]
+ignored = ["monad-archive", "monad-query-primitives"]
 
 [workspace.dependencies]
-monad-archive = { path = "./monad-archive" }
+monad-archive          = { path = "./monad-archive" }
+monad-query-primitives = { path = "./monad-query-primitives" }
 
 monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
 monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
@@ -34,8 +34,9 @@ enum_dispatch = "0.3.13"
 eyre = "0.6.12"
 futures = "0.3"
 hex = "0.4"
-humantime = "2.1"
+itertools = "0.13"
 mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
+num_enum = "0.7.6"
 opentelemetry = "0.31"
 opentelemetry-otlp = "0.31"
 opentelemetry-semantic-conventions = "0.29"
@@ -46,6 +47,7 @@ reqwest = { version = "0.12.28", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 tempfile = "3.5"
+thiserror = "1.0"
 tokio = { version = "1.39", features = ["sync"] }
 tokio-retry = "0.3.0"
 toml = "0.9"
