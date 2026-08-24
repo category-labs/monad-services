@@ -27,6 +27,7 @@ pub struct LogEntry {
     pub address: Address,
     pub topics: Vec<B256>,
     pub data: Bytes,
+    pub removed: bool,
 }
 
 /// Per-log fields stored in block blob (block-level fields reconstructed at read time).
@@ -60,6 +61,7 @@ impl StoredLog {
             address: self.address,
             topics: self.topics,
             data: self.data,
+            removed: false,
         }
     }
 }
