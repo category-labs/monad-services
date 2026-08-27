@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use monad_query_errors::{LimitExceededKind, QueryError, Result};
+use monad_query_errors::{QueryError, Result};
 
 use crate::order::QueryOrder;
 
@@ -46,31 +46,25 @@ impl Default for QueryEnvelope {
     }
 }
 
-/// Per-deployment caps on query shape.
+/// Per-deployment cap on query result count.
 ///
 /// - `max_limit`: upper bound on [`QueryEnvelope::limit`]
-/// - `max_block_range`: upper bound on the resolved block span
 ///
-/// Neither cap per-block result counts; implementations must complete the
-/// current block before stopping, so results may exceed `max_limit`.
+/// Implementations must complete the current block before stopping, so results
+/// may exceed `max_limit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueryLimits {
     pub max_limit: usize,
-    pub max_block_range: u64,
 }
 
 impl QueryLimits {
-    /// Effectively unlimited constraints; used in tests and internal contexts.
+    /// Effectively unlimited result count; used in tests and internal contexts.
     pub const UNLIMITED: Self = Self {
         max_limit: usize::MAX,
-        max_block_range: u64::MAX,
     };
 
-    pub const fn new(max_limit: usize, max_block_range: u64) -> Self {
-        Self {
-            max_limit,
-            max_block_range,
-        }
+    pub const fn new(max_limit: usize) -> Self {
+        Self { max_limit }
     }
 
     pub fn check_limit(&self, limit: usize) -> Result<()> {
@@ -79,9 +73,7 @@ impl QueryLimits {
         }
         if limit > self.max_limit {
             return Err(QueryError::LimitExceeded {
-                kind: LimitExceededKind::Limit,
                 max_limit: self.max_limit,
-                max_block_range: self.max_block_range,
             });
         }
         Ok(())
@@ -90,13 +82,13 @@ impl QueryLimits {
 
 #[cfg(test)]
 mod tests {
-    use monad_query_errors::{LimitExceededKind, QueryError};
+    use monad_query_errors::QueryError;
 
     use super::QueryLimits;
 
     #[test]
     fn check_limit_accepts_and_rejects_boundary_values() {
-        let limits = QueryLimits::new(5, 1_000);
+        let limits = QueryLimits::new(5);
 
         assert!(matches!(
             limits.check_limit(0),
@@ -106,11 +98,7 @@ mod tests {
         assert!(limits.check_limit(5).is_ok());
         assert!(matches!(
             limits.check_limit(6),
-            Err(QueryError::LimitExceeded {
-                kind: LimitExceededKind::Limit,
-                max_limit: 5,
-                max_block_range: 1_000,
-            })
+            Err(QueryError::LimitExceeded { max_limit: 5 })
         ));
     }
 }

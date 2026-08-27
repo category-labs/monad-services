@@ -59,25 +59,6 @@ pub enum QueryError {
          the ingestion/compaction commit contract is broken"
     )]
     PrimaryDirectoryMissingId { id: u64, backing: &'static str },
-    #[error("limit exceeded ({kind}): max_limit={max_limit}, max_block_range={max_block_range}")]
-    LimitExceeded {
-        kind: LimitExceededKind,
-        max_limit: usize,
-        max_block_range: u64,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LimitExceededKind {
-    Limit,
-    BlockRange,
-}
-
-impl std::fmt::Display for LimitExceededKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Limit => f.write_str("limit"),
-            Self::BlockRange => f.write_str("block range"),
-        }
-    }
+    #[error("limit exceeded: max_limit={max_limit}")]
+    LimitExceeded { max_limit: usize },
 }
