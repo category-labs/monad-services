@@ -13,12 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use monad_query_errors::{LimitExceededKind, QueryError, Result};
-use monad_query_primitives::{
-    limits::{QueryEnvelope, QueryLimits},
-    order::QueryOrder,
-    refs::BlockRef,
-};
+use monad_query_errors::{QueryError, Result};
+use monad_query_primitives::{limits::QueryEnvelope, order::QueryOrder, refs::BlockRef};
 use monad_query_store::MetaStore;
 
 use crate::tables::BlockTables;
@@ -36,63 +32,19 @@ pub struct ResolvedBlockWindow {
 }
 
 impl ResolvedBlockWindow {
-    /// Resolves a query's inclusive block range against the published head,
-    /// bounds omitted endpoints to the first pagination window, rejects an
-    /// explicit span above `limits.max_block_range`, then loads the bounds.
+    /// Resolves a query's inclusive block range against the published head and
+    /// loads the bounds.
     pub async fn resolve<M: MetaStore>(
         envelope: &QueryEnvelope,
         published_head: u64,
-        limits: &QueryLimits,
         blocks: &BlockTables<M>,
     ) -> Result<Self> {
-        let (mut low_number, mut high_number) = Self::resolve_block_numbers(
+        let (low_number, high_number) = Self::resolve_block_numbers(
             envelope.from_block,
             envelope.to_block,
             envelope.order,
             published_head,
         )?;
-
-        // An omitted traversal endpoint is an open-ended pagination request.
-        // Bound its first scan window, while retaining rejection for explicit
-        // ranges that exceed the deployment cap.
-        if limits.max_block_range > 0 {
-            let span = high_number - low_number + 1;
-            if span > limits.max_block_range {
-                match envelope.order {
-                    QueryOrder::Ascending if envelope.to_block.is_none() => {
-                        high_number = low_number
-                            .saturating_add(limits.max_block_range - 1)
-                            .min(high_number);
-                    }
-                    QueryOrder::Ascending if envelope.from_block.is_none() => {
-                        low_number = high_number
-                            .saturating_add(1)
-                            .saturating_sub(limits.max_block_range);
-                    }
-                    QueryOrder::Descending if envelope.to_block.is_none() => {
-                        low_number = high_number
-                            .saturating_add(1)
-                            .saturating_sub(limits.max_block_range)
-                            .max(low_number);
-                    }
-                    QueryOrder::Descending if envelope.from_block.is_none() => {
-                        high_number = low_number
-                            .saturating_add(limits.max_block_range - 1)
-                            .min(high_number);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let span = high_number - low_number + 1;
-        if span > limits.max_block_range {
-            return Err(QueryError::LimitExceeded {
-                kind: LimitExceededKind::BlockRange,
-                max_limit: limits.max_limit,
-                max_block_range: limits.max_block_range,
-            });
-        }
 
         let load = |number, msg| async move {
             blocks
@@ -181,13 +133,21 @@ impl ResolvedBlockWindow {
 #[cfg(test)]
 mod tests {
     use monad_query_errors::QueryError;
-    use monad_query_primitives::order::QueryOrder;
+    use monad_query_primitives::{order::QueryOrder, refs::BlockRef};
 
     use super::{ResolvedBlockWindow, EARLIEST_QUERYABLE_BLOCK};
 
     const HEAD: u64 = 100;
 
-    fn resolve(
+    fn block_ref(number: u64) -> BlockRef {
+        BlockRef {
+            number,
+            hash: Default::default(),
+            parent_hash: Default::default(),
+        }
+    }
+
+    fn resolve_numbers(
         from: Option<u64>,
         to: Option<u64>,
         order: QueryOrder,
@@ -198,7 +158,7 @@ mod tests {
     #[test]
     fn ascending_defaults_span_earliest_to_head() {
         assert_eq!(
-            resolve(None, None, QueryOrder::Ascending).unwrap(),
+            resolve_numbers(None, None, QueryOrder::Ascending).unwrap(),
             (EARLIEST_QUERYABLE_BLOCK, HEAD)
         );
     }
@@ -206,15 +166,51 @@ mod tests {
     #[test]
     fn descending_defaults_span_earliest_to_head() {
         assert_eq!(
-            resolve(None, None, QueryOrder::Descending).unwrap(),
+            resolve_numbers(None, None, QueryOrder::Descending).unwrap(),
             (EARLIEST_QUERYABLE_BLOCK, HEAD)
+        );
+    }
+
+    #[test]
+    fn explicit_large_range_resolves_fully() {
+        assert_eq!(
+            resolve_numbers(Some(1), Some(HEAD), QueryOrder::Ascending).unwrap(),
+            (1, HEAD)
+        );
+    }
+
+    #[test]
+    fn omitted_from_block_resolves_to_natural_boundary() {
+        assert_eq!(
+            resolve_numbers(None, Some(40), QueryOrder::Ascending).unwrap(),
+            (EARLIEST_QUERYABLE_BLOCK, 40)
+        );
+        assert_eq!(
+            resolve_numbers(None, Some(20), QueryOrder::Descending).unwrap(),
+            (20, HEAD)
+        );
+    }
+
+    #[test]
+    fn omitted_to_block_resolves_to_natural_boundary() {
+        assert_eq!(
+            resolve_numbers(Some(20), None, QueryOrder::Ascending).unwrap(),
+            (20, HEAD)
+        );
+        assert_eq!(
+            resolve_numbers(Some(80), None, QueryOrder::Descending).unwrap(),
+            (EARLIEST_QUERYABLE_BLOCK, 80)
         );
     }
 
     #[test]
     fn explicit_block_zero_lower_bound_clamps_to_earliest() {
         assert_eq!(
-            resolve(Some(0), Some(5), QueryOrder::Ascending).unwrap(),
+            resolve_numbers(Some(0), Some(5), QueryOrder::Ascending).unwrap(),
+            (1, 5)
+        );
+        assert_eq!(
+            resolve_numbers(Some(5), Some(0), QueryOrder::Descending).unwrap(),
             (1, 5)
         );
     }
@@ -223,7 +219,7 @@ mod tests {
     fn block_zero_alone_is_rejected_not_clamped() {
         // The clamp must not silently serve block 1's data for a block-0 request.
         assert!(matches!(
-            resolve(Some(0), Some(0), QueryOrder::Ascending),
+            resolve_numbers(Some(0), Some(0), QueryOrder::Ascending),
             Err(QueryError::InvalidRequest(_))
         ));
     }
@@ -231,7 +227,11 @@ mod tests {
     #[test]
     fn high_bound_is_clamped_to_published_head() {
         assert_eq!(
-            resolve(Some(10), Some(HEAD + 50), QueryOrder::Ascending).unwrap(),
+            resolve_numbers(Some(10), Some(HEAD + 50), QueryOrder::Ascending).unwrap(),
+            (10, HEAD)
+        );
+        assert_eq!(
+            resolve_numbers(Some(HEAD + 50), Some(10), QueryOrder::Descending).unwrap(),
             (10, HEAD)
         );
     }
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn lower_bound_above_head_is_rejected() {
         assert!(matches!(
-            resolve(Some(HEAD + 1), Some(HEAD + 5), QueryOrder::Ascending),
+            resolve_numbers(Some(HEAD + 1), Some(HEAD + 5), QueryOrder::Ascending),
             Err(QueryError::InvalidRequest(_))
         ));
     }
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn ascending_inverted_range_is_rejected() {
         assert!(matches!(
-            resolve(Some(5), Some(3), QueryOrder::Ascending),
+            resolve_numbers(Some(5), Some(3), QueryOrder::Ascending),
             Err(QueryError::InvalidRequest(_))
         ));
     }
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn descending_valid_range_resolves_low_to_high() {
         assert_eq!(
-            resolve(Some(5), Some(2), QueryOrder::Descending).unwrap(),
+            resolve_numbers(Some(5), Some(2), QueryOrder::Descending).unwrap(),
             (2, 5)
         );
     }
@@ -263,19 +263,29 @@ mod tests {
     #[test]
     fn descending_inverted_range_is_rejected() {
         assert!(matches!(
-            resolve(Some(2), Some(5), QueryOrder::Descending),
+            resolve_numbers(Some(2), Some(5), QueryOrder::Descending),
             Err(QueryError::InvalidRequest(_))
         ));
     }
 
     #[test]
-    fn iter_walks_inclusive_range_in_requested_direction() {
-        use monad_query_primitives::refs::BlockRef;
-        let block_ref = |number| BlockRef {
-            number,
-            hash: Default::default(),
-            parent_hash: Default::default(),
+    fn request_endpoints_map_low_high_to_requested_order() {
+        let window = ResolvedBlockWindow {
+            low: block_ref(2),
+            high: block_ref(4),
         };
+        assert_eq!(
+            window.request_endpoints(QueryOrder::Ascending),
+            (block_ref(2), block_ref(4))
+        );
+        assert_eq!(
+            window.request_endpoints(QueryOrder::Descending),
+            (block_ref(4), block_ref(2))
+        );
+    }
+
+    #[test]
+    fn iter_walks_inclusive_range_in_requested_direction() {
         let window = ResolvedBlockWindow {
             low: block_ref(2),
             high: block_ref(4),

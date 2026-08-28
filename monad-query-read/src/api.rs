@@ -114,7 +114,7 @@ impl<M: MetaStore, B: BlobStore> MonadChainDataService<M, B> {
         self.limits.check_limit(envelope.limit)?;
         let head = self.require_published_head().await?;
         let window =
-            ResolvedBlockWindow::resolve(envelope, head, &self.limits, self.tables.blocks())
+            ResolvedBlockWindow::resolve(envelope, head, self.tables.blocks())
                 .await?;
         Ok((head, window))
     }

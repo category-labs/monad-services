@@ -31,7 +31,7 @@ pub use monad_query_engine::{
     },
     txs::TxHashIndexTable,
 };
-pub use monad_query_errors::{LimitExceededKind, QueryError, Result};
+pub use monad_query_errors::{QueryError, Result};
 pub use monad_query_primitives::{
     limits::{QueryEnvelope, QueryLimits},
     order::QueryOrder,
