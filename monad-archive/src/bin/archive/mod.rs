@@ -24,26 +24,24 @@ mod generic_folder_archiver;
 
 use bft_archive_worker::bft_block_archive_worker;
 use block_archive_worker::{archive_worker, ArchiveWorkerOpts};
-use cli::{Commands, ParsedCli};
+use cli::{ArchiveRunCli, ArchiveRunCliArgs, ArchiveRunParsedCli, Commands};
 use file_checkpointer::file_checkpoint_worker;
 use generic_folder_archiver::recursive_dir_archiver;
 use tokio::task::JoinHandle;
 use tracing::Level;
 
-mod cli;
+pub mod cli;
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<()> {
+pub async fn run(args: ArchiveRunCliArgs) -> Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
-    let parsed = cli::Cli::parse();
-
     // Handle subcommands
-    if let ParsedCli::Command(cmd) = parsed {
+    let parsed = ArchiveRunCli::parse(args);
+    if let ArchiveRunParsedCli::Command(cmd) = parsed {
         return handle_command(cmd).await;
     }
 
-    let ParsedCli::Daemon(args) = parsed else {
+    let ArchiveRunParsedCli::Daemon(args) = parsed else {
         unreachable!()
     };
     info!(?args, "Cli Arguments: ");

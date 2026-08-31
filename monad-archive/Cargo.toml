@@ -3,6 +3,8 @@ name = "monad-archive"
 description = "Monad archive solution"
 version = "0.1.0"
 edition = "2021"
+# src/bin/ holds the modules of the single monad-archive binary, not a binary each.
+autobins = false
 
 # this is necessary for criterion bench options
 # https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
@@ -10,19 +12,8 @@ edition = "2021"
 bench = false
 
 [[bin]]
-name = "monad-archive-checker"
-bench = false
-
-[[bin]]
-name = "monad-archiver"
-bench = false
-
-[[bin]]
-name = "monad-block-writer"
-bench = false
-
-[[bin]]
-name = "monad-indexer"
+name = "monad-archive"
+path = "src/bin/main.rs"
 bench = false
 
 [features]

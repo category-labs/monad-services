@@ -7,11 +7,22 @@ Wants=network-online.target
 Type=simple
 User=monad
 Group=monad
+StateDirectory=monad-services
+WorkingDirectory=/var/lib/monad-services
 EnvironmentFile=-/etc/monad-services/env
-ExecStart=/usr/lib/monad-services/monad-indexer
+ExecStart=/usr/lib/monad-services/monad-archive index \
+    --block-data-source "${BLOCK_DATA_SOURCE}" \
+    --archive-sink "${ARCHIVE_SINK}" \
+    --otel-endpoint "http://127.0.0.1:4317"
 Restart=always
 RestartSec=5
+DeviceAllow=/dev/triedb rw
 LimitNOFILE=1048576
+# Hugemem configs below
+LimitMEMLOCK=infinity
+MemoryDenyWriteExecute=false
+ProtectKernelModules=no
+ProtectKernelLogs=no
 
 [Install]
 WantedBy=multi-user.target

@@ -18,7 +18,7 @@ use monad_archive::{kvstore::WritePolicy, prelude::*};
 use opentelemetry::KeyValue;
 use tokio::time::interval;
 
-use crate::{
+use crate::check::{
     checker::{fetch_block_data, process_blocks, store_checking_results},
     model::{CheckerModel, Fault, FaultKind, GoodBlocks},
     CHUNK_SIZE,
@@ -537,7 +537,7 @@ mod tests {
     use monad_archive::{kvstore::WritePolicy, prelude::LatestKind};
 
     use super::*;
-    use crate::{
+    use crate::check::{
         checker::tests::{create_test_block_data, create_test_block_data_range, setup_test_model},
         model::{GoodBlocks, InconsistentBlockReason},
     };

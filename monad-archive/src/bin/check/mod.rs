@@ -19,14 +19,13 @@
 //! blocks, receipts, and traces across multiple archival replicas. It detects
 //! and reports inconsistencies, missing data, and corrupted blocks.
 
-use clap::Parser;
 use eyre::Result;
 use model::CheckerModel;
 use monad_archive::{cli::get_aws_config, prelude::*};
 use tracing_subscriber::EnvFilter;
 
 mod checker;
-mod cli;
+pub mod cli;
 mod fault_fixer;
 mod inspector;
 mod model;
@@ -37,8 +36,7 @@ mod rechecker_v2;
 /// A chunk is the smallest unit of blocks that can be rechecked or have faults cleared.
 pub const CHUNK_SIZE: u64 = 1000;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+pub async fn run(args: cli::ArchiveCheckCli) -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -49,7 +47,6 @@ async fn main() -> Result<()> {
         .init();
 
     // Parse command line arguments
-    let args = cli::Cli::parse();
     info!("Starting monad-archive-checker with mode: {:?}", args.mode);
 
     if let Some(max_compute_threads) = args.max_compute_threads.as_ref() {

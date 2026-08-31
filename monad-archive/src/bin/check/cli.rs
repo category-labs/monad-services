@@ -18,32 +18,31 @@ use monad_archive::cli::ArchiveArgs;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "monad-archive-checker",
     about = "Archive consistency checker for validating blockchain data across multiple replicas",
     long_about = "Archive consistency checker for validating blockchain data across multiple replicas.\n\n\
 EXAMPLES:\n\n\
   # Start main checker with 3 replicas (runs continuously)\n\
-  monad-archive-checker --bucket checker-state --region us-east-1 checker \\\n\
+  monad-archive check --bucket checker-state --region us-east-1 checker \\\n\
     --init-replicas 'aws archive-1 20,aws archive-2 20,aws archive-3 20'\n\n\
   # Inspect specific faults\n\
-  monad-archive-checker --bucket checker-state inspector list-faults\n\
-  monad-archive-checker --bucket checker-state inspector inspect-block 12345 --format all\n\n\
+  monad-archive check --bucket checker-state inspector list-faults\n\
+  monad-archive check --bucket checker-state inspector inspect-block 12345 --format all\n\n\
   # Fix faults by copying from good replicas (dry run first)\n\
-  monad-archive-checker --bucket checker-state fault-fixer\n\
-  monad-archive-checker --bucket checker-state fault-fixer --commit-changes --verify\n\n\
+  monad-archive check --bucket checker-state fault-fixer\n\
+  monad-archive check --bucket checker-state fault-fixer --commit-changes --verify\n\n\
   # Run standalone rechecker to fix false positives (runs once and exits)\n\
-  monad-archive-checker --bucket checker-state rechecker\n\n\
+  monad-archive check --bucket checker-state rechecker\n\n\
   # Run rechecker in worker mode (runs periodically)\n\
-  monad-archive-checker --bucket checker-state rechecker --worker --recheck-freq-min 5\n\n\
+  monad-archive check --bucket checker-state rechecker --worker --recheck-freq-min 5\n\n\
   # Advanced: Recheck specific block range with dry run\n\
-  monad-archive-checker --bucket checker-state rechecker \\\n\
+  monad-archive check --bucket checker-state rechecker \\\n\
     --start-block 1000 --end-block 5000 --dry-run\n\n\
   # Force recheck all chunks even without faults\n\
-  monad-archive-checker --bucket checker-state rechecker \\\n\
+  monad-archive check --bucket checker-state rechecker \\\n\
     --start-block 0 --end-block 10000 --force-recheck --dry-run\n\n\
 "
 )]
-pub struct Cli {
+pub struct ArchiveCheckCli {
     #[command(subcommand)]
     pub mode: Mode,
 
@@ -228,7 +227,7 @@ mod tests {
 
     #[test]
     fn global_args_work_after_subcommand() {
-        let cli = Cli::try_parse_from([
+        let cli = ArchiveCheckCli::try_parse_from([
             "monad-archive-checker",
             "--bucket",
             "test-bucket",

@@ -20,7 +20,7 @@ use eyre::{eyre, Result};
 use monad_archive::cli::{ArchiveArgs, BlockDataReaderArgs};
 
 #[derive(Debug)]
-pub struct Cli {
+pub struct ArchiveIndexCli {
     pub block_data_source: BlockDataReaderArgs,
     pub fallback_block_data_source: Option<BlockDataReaderArgs>,
     pub archive_sink: ArchiveArgs,
@@ -36,37 +36,26 @@ pub struct Cli {
     pub enable_logs_indexing: bool,
 }
 
-pub enum ParsedCli {
-    Command { command: Commands, args: CliArgs },
-    Daemon(Cli),
+pub enum ArchiveIndexParsedCli {
+    Command {
+        command: Commands,
+        args: ArchiveIndexCliArgs,
+    },
+    Daemon(ArchiveIndexCli),
 }
 
-impl Cli {
-    pub fn parse() -> ParsedCli {
-        let mut args = match CliArgs::try_parse() {
-            Ok(args) => args,
-            Err(err) => match err.kind() {
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-                    let _ = err.print();
-                    process::exit(0);
-                }
-                _ => {
-                    eprintln!("failed to parse monad-indexer args: {err:?}");
-                    process::exit(2);
-                }
-            },
-        };
-
+impl ArchiveIndexCli {
+    pub fn parse(mut args: ArchiveIndexCliArgs) -> ArchiveIndexParsedCli {
         if let Some(command) = std::mem::take(&mut args.command) {
             if let Err(err) = args.validate_command(&command) {
                 let _ = err.print();
                 process::exit(2);
             }
-            return ParsedCli::Command { command, args };
+            return ArchiveIndexParsedCli::Command { command, args };
         }
 
         match args.into_cli() {
-            Ok(cli) => ParsedCli::Daemon(cli),
+            Ok(cli) => ArchiveIndexParsedCli::Daemon(cli),
             Err(err) => {
                 eprintln!("failed to load monad-indexer configuration: {err:?}");
                 process::exit(2);
@@ -76,8 +65,7 @@ impl Cli {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "monad-indexer", about, long_about = None)]
-pub struct CliArgs {
+pub struct ArchiveIndexCliArgs {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -135,9 +123,9 @@ pub struct CliArgs {
     pub enable_logs_indexing: bool,
 }
 
-impl CliArgs {
-    pub fn into_cli(self) -> Result<Cli> {
-        let CliArgs {
+impl ArchiveIndexCliArgs {
+    pub fn into_cli(self) -> Result<ArchiveIndexCli> {
+        let ArchiveIndexCliArgs {
             command: _,
             block_data_source,
             fallback_block_data_source,
@@ -154,7 +142,7 @@ impl CliArgs {
             enable_logs_indexing,
         } = self;
 
-        Ok(Cli {
+        Ok(ArchiveIndexCli {
             block_data_source: block_data_source
                 .ok_or_else(|| eyre!("block_data_source must be provided"))?,
             fallback_block_data_source,
@@ -185,7 +173,7 @@ impl CliArgs {
     }
 
     fn missing_archive_sink_error() -> clap::Error {
-        CliArgs::command().error(
+        ArchiveIndexCliArgs::command().error(
             ErrorKind::MissingRequiredArgument,
             "The following required argument was not provided: --archive-sink <ARCHIVE_SINK>",
         )
@@ -268,8 +256,8 @@ mod tests {
         })
     }
 
-    fn make_cli_args_with_defaults() -> CliArgs {
-        CliArgs {
+    fn make_cli_args_with_defaults() -> ArchiveIndexCliArgs {
+        ArchiveIndexCliArgs {
             command: None,
             block_data_source: None,
             fallback_block_data_source: None,
@@ -343,7 +331,7 @@ mod tests {
 
     #[test]
     fn clap_parses_set_start_block_with_global_archive_sink() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "--archive-sink",
             "aws sink-bucket",
@@ -365,7 +353,7 @@ mod tests {
 
     #[test]
     fn clap_parses_set_start_block_with_archive_sink_after_subcommand() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "set-start-block",
             "--block",
@@ -387,7 +375,7 @@ mod tests {
 
     #[test]
     fn clap_parses_set_start_block_with_async_backfill() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "--archive-sink",
             "aws sink-bucket",
@@ -409,7 +397,7 @@ mod tests {
 
     #[test]
     fn clap_parses_daemon_mode_with_all_flags() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "--block-data-source",
             "aws source-bucket",
@@ -431,7 +419,12 @@ mod tests {
 
     #[test]
     fn validate_set_start_block_requires_archive_sink() {
-        let args = CliArgs::try_parse_from(["monad-indexer", "set-start-block", "--block", "100"]);
+        let args = ArchiveIndexCliArgs::try_parse_from([
+            "monad-indexer",
+            "set-start-block",
+            "--block",
+            "100",
+        ]);
 
         let args = args.expect("clap should parse, validation happens later");
         let command = args.command.as_ref().expect("command should be set");
@@ -443,7 +436,7 @@ mod tests {
 
     #[test]
     fn validate_migrate_capped_without_block_data_source() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "migrate-capped",
             "--db-name",
@@ -463,7 +456,7 @@ mod tests {
 
     #[test]
     fn validate_migrate_capped_requires_archive_sink() {
-        let args = CliArgs::try_parse_from([
+        let args = ArchiveIndexCliArgs::try_parse_from([
             "monad-indexer",
             "migrate-capped",
             "--db-name",

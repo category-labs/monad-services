@@ -20,7 +20,7 @@ use eyre::Result;
 use futures::stream;
 use monad_archive::prelude::*;
 
-use crate::{
+use crate::check::{
     model::{CheckerModel, Fault, FaultKind, GoodBlocks, InconsistentBlockReason},
     CHUNK_SIZE,
 };
@@ -841,7 +841,7 @@ pub mod tests {
     };
 
     use super::*;
-    use crate::model::InconsistentBlockReason;
+    use crate::check::model::InconsistentBlockReason;
 
     #[test]
     fn test_process_blocks_empty() {
