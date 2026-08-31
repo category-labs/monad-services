@@ -70,7 +70,7 @@ pub struct ArchiveIndexCliArgs {
     pub command: Option<Commands>,
 
     /// Source to read block data that will be indexed
-    #[arg(long, value_parser = clap::value_parser!(BlockDataReaderArgs))]
+    #[arg(long, env = "BLOCK_DATA_SOURCE", value_parser = clap::value_parser!(BlockDataReaderArgs))]
     pub block_data_source: Option<BlockDataReaderArgs>,
 
     /// If reading from --block-data-source fails, attempts to read from
@@ -80,7 +80,7 @@ pub struct ArchiveIndexCliArgs {
 
     /// Where archive data is written to
     /// For aws: 'aws <bucket_name> <concurrent_requests>'
-    #[arg(long, global = true, value_parser = clap::value_parser!(ArchiveArgs))]
+    #[arg(long, global = true, env = "ARCHIVE_SINK", value_parser = clap::value_parser!(ArchiveArgs))]
     pub archive_sink: Option<ArchiveArgs>,
 
     /// If set, indexer will perform an asynchronous backfill of the index
@@ -103,7 +103,7 @@ pub struct ArchiveIndexCliArgs {
     pub stop_block: Option<u64>,
 
     /// Endpoint to push metrics to
-    #[arg(long)]
+    #[arg(long, env = "OTEL_ENDPOINT")]
     pub otel_endpoint: Option<String>,
 
     #[arg(long)]

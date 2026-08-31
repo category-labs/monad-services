@@ -47,20 +47,20 @@ pub struct ArchiveCheckCli {
     pub mode: Mode,
 
     /// S3 bucket name for storing checker state
-    #[arg(long)]
+    #[arg(long, env = "ARCHIVE_BUCKET")]
     pub bucket: String,
 
     /// AWS region
     #[arg(long, global = true)]
     pub region: Option<String>,
 
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "OTEL_ENDPOINT")]
     pub otel_endpoint: Option<String>,
 
     #[arg(long, global = true)]
     pub otel_replica_name_override: Option<String>,
 
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "MAX_COMPUTE_THREADS")]
     pub max_compute_threads: Option<usize>,
 }
 
@@ -80,7 +80,7 @@ pub enum Mode {
 pub struct CheckerArgs {
     /// Comma-separated list of replicas to check
     /// Format: 'aws bucket1 [concurrency1] [region1],aws bucket2 [concurrency2] [region2],...'
-    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(ArchiveArgs))]
+    #[arg(long, env = "INIT_REPLICAS", value_delimiter = ',', value_parser = clap::value_parser!(ArchiveArgs))]
     pub init_replicas: Option<Vec<ArchiveArgs>>,
 
     /// Flag to disable running rechecker worker to determine if existing faults still exist
@@ -95,7 +95,7 @@ pub struct CheckerArgs {
     pub min_lag_from_tip: u64,
 
     /// How frequently to recheck faults in minutes
-    #[arg(long, default_value_t = 15.)]
+    #[arg(long, env = "RECHECK_FREQ_MIN", default_value_t = 15.)]
     pub recheck_freq_min: f64,
 
     /// How many blocks to process in parallel

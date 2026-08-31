@@ -365,23 +365,23 @@ pub struct ArchiveRunCliArgs {
 
     /// Where blocks, receipts and traces are read from
     /// For triedb: 'triedb <triedb_path> <concurrent_requests>'
-    #[arg(long, value_parser = clap::value_parser!(BlockDataReaderArgs))]
+    #[arg(long, env = "BLOCK_DATA_SOURCE", value_parser = clap::value_parser!(BlockDataReaderArgs))]
     block_data_source: Option<BlockDataReaderArgs>,
 
     /// If reading from --block-data-source fails, attempts to read from
     /// this optional fallback
-    #[arg(long, value_parser = clap::value_parser!(BlockDataReaderArgs))]
+    #[arg(long, env = "FALLBACK_BLOCK_DATA_SOURCE", value_parser = clap::value_parser!(BlockDataReaderArgs))]
     fallback_block_data_source: Option<BlockDataReaderArgs>,
 
     /// Where archive data is written to
     /// For aws: 'aws <bucket_name> <concurrent_requests>'
-    #[arg(long, value_parser = clap::value_parser!(ArchiveArgs))]
+    #[arg(long, env = "ARCHIVE_SINK", value_parser = clap::value_parser!(ArchiveArgs))]
     archive_sink: Option<ArchiveArgs>,
 
     #[arg(long)]
     max_blocks_per_iteration: Option<u64>,
 
-    #[arg(long)]
+    #[arg(long, env = "MAX_CONCURRENT_BLOCKS")]
     max_concurrent_blocks: Option<usize>,
 
     /// Override block number to stop at
@@ -409,7 +409,7 @@ pub struct ArchiveRunCliArgs {
 
     /// Path to folder containing bft blocks
     /// If set, archiver will upload these files to blob store provided in archive_sink
-    #[arg(long)]
+    #[arg(long, env = "BFT_BLOCK_PATH")]
     bft_block_path: Option<PathBuf>,
 
     #[arg(long)]
@@ -465,7 +465,7 @@ pub struct ArchiveRunCliArgs {
     #[arg(long, action = ArgAction::SetTrue)]
     unsafe_allow_traces_overwrite: bool,
 
-    #[arg(long)]
+    #[arg(long, env = "OTEL_ENDPOINT")]
     otel_endpoint: Option<String>,
 
     #[arg(long)]

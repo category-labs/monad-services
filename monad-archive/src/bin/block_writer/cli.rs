@@ -28,7 +28,7 @@ pub struct ArchiveBlockWriterCli {
 #[derive(Debug, Parser)]
 pub struct SharedArgs {
     /// Source to read block data that will be indexed
-    #[arg(long, value_parser = clap::value_parser!(BlockDataReaderArgs))]
+    #[arg(long, env = "BLOCK_DATA_SOURCE", value_parser = clap::value_parser!(BlockDataReaderArgs))]
     pub block_data_source: BlockDataReaderArgs,
 
     /// If reading from --block-data-source fails, attempts to read from
@@ -36,7 +36,7 @@ pub struct SharedArgs {
     #[arg(long, value_parser = clap::value_parser!(BlockDataReaderArgs))]
     pub fallback_block_data_source: Option<BlockDataReaderArgs>,
 
-    #[arg(long)]
+    #[arg(long, env = "BLOCK_WRITER_DEST_PATH")]
     pub dest_path: PathBuf,
 
     /// Maximum number of retries for failed blocks
