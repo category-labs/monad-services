@@ -117,6 +117,13 @@ sed -e "s/@PACKAGE_VERSION@/$version/" -e "s%@DEPENDS@%$lib_deps%" \
   debian/DEBIAN/control.in > "$stage_dir/DEBIAN/control"
 rm "$stage_dir/DEBIAN/control.in"
 
+# Policy 12.7 wants a compressed Debian changelog next to the static
+# copyright file; the git history is the real changelog, so ship a stub
+# entry that points at it.
+printf 'monad-services (%s) unstable; urgency=medium\n\n  * See https://github.com/category-labs/monad-services for the change history.\n\n -- Category Labs <engineering@category.xyz>  %s\n' \
+  "$version" "$(date -R)" \
+  | gzip -9n > "$stage_dir/usr/share/doc/monad-services/changelog.Debian.gz"
+
 # --- package ---
 mkdir -p "$output_dir"
 dpkg-deb --root-owner-group --build "$stage_dir" "$output_dir/monad-services_${version}_amd64.deb"
