@@ -21,7 +21,7 @@ use monad_archive::{kvstore::WritePolicy, prelude::*};
 use opentelemetry::KeyValue;
 use tracing::{debug, error, info, warn};
 
-use crate::{
+use crate::check::{
     model::{CheckerModel, Fault, FaultKind},
     rechecker_v2::recheck_chunk_from_scratch,
 };
@@ -391,7 +391,7 @@ mod tests {
     use monad_archive::prelude::LatestKind;
 
     use super::*;
-    use crate::{
+    use crate::check::{
         checker::tests::{create_test_block_data, create_test_block_data_range, setup_test_model},
         model::{GoodBlocks, InconsistentBlockReason},
     };

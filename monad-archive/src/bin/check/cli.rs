@@ -18,50 +18,49 @@ use monad_archive::cli::ArchiveArgs;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "monad-archive-checker",
     about = "Archive consistency checker for validating blockchain data across multiple replicas",
     long_about = "Archive consistency checker for validating blockchain data across multiple replicas.\n\n\
 EXAMPLES:\n\n\
   # Start main checker with 3 replicas (runs continuously)\n\
-  monad-archive-checker --bucket checker-state --region us-east-1 checker \\\n\
+  monad-archive check --bucket checker-state --region us-east-1 checker \\\n\
     --init-replicas 'aws archive-1 20,aws archive-2 20,aws archive-3 20'\n\n\
   # Inspect specific faults\n\
-  monad-archive-checker --bucket checker-state inspector list-faults\n\
-  monad-archive-checker --bucket checker-state inspector inspect-block 12345 --format all\n\n\
+  monad-archive check --bucket checker-state inspector list-faults\n\
+  monad-archive check --bucket checker-state inspector inspect-block 12345 --format all\n\n\
   # Fix faults by copying from good replicas (dry run first)\n\
-  monad-archive-checker --bucket checker-state fault-fixer\n\
-  monad-archive-checker --bucket checker-state fault-fixer --commit-changes --verify\n\n\
+  monad-archive check --bucket checker-state fault-fixer\n\
+  monad-archive check --bucket checker-state fault-fixer --commit-changes --verify\n\n\
   # Run standalone rechecker to fix false positives (runs once and exits)\n\
-  monad-archive-checker --bucket checker-state rechecker\n\n\
+  monad-archive check --bucket checker-state rechecker\n\n\
   # Run rechecker in worker mode (runs periodically)\n\
-  monad-archive-checker --bucket checker-state rechecker --worker --recheck-freq-min 5\n\n\
+  monad-archive check --bucket checker-state rechecker --worker --recheck-freq-min 5\n\n\
   # Advanced: Recheck specific block range with dry run\n\
-  monad-archive-checker --bucket checker-state rechecker \\\n\
+  monad-archive check --bucket checker-state rechecker \\\n\
     --start-block 1000 --end-block 5000 --dry-run\n\n\
   # Force recheck all chunks even without faults\n\
-  monad-archive-checker --bucket checker-state rechecker \\\n\
+  monad-archive check --bucket checker-state rechecker \\\n\
     --start-block 0 --end-block 10000 --force-recheck --dry-run\n\n\
 "
 )]
-pub struct Cli {
+pub struct ArchiveCheckCli {
     #[command(subcommand)]
     pub mode: Mode,
 
     /// S3 bucket name for storing checker state
-    #[arg(long)]
+    #[arg(long, env = "ARCHIVE_BUCKET")]
     pub bucket: String,
 
     /// AWS region
     #[arg(long, global = true)]
     pub region: Option<String>,
 
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "OTEL_ENDPOINT")]
     pub otel_endpoint: Option<String>,
 
     #[arg(long, global = true)]
     pub otel_replica_name_override: Option<String>,
 
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "MAX_COMPUTE_THREADS")]
     pub max_compute_threads: Option<usize>,
 }
 
@@ -81,7 +80,7 @@ pub enum Mode {
 pub struct CheckerArgs {
     /// Comma-separated list of replicas to check
     /// Format: 'aws bucket1 [concurrency1] [region1],aws bucket2 [concurrency2] [region2],...'
-    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(ArchiveArgs))]
+    #[arg(long, env = "INIT_REPLICAS", value_delimiter = ',', value_parser = clap::value_parser!(ArchiveArgs))]
     pub init_replicas: Option<Vec<ArchiveArgs>>,
 
     /// Flag to disable running rechecker worker to determine if existing faults still exist
@@ -96,7 +95,7 @@ pub struct CheckerArgs {
     pub min_lag_from_tip: u64,
 
     /// How frequently to recheck faults in minutes
-    #[arg(long, default_value_t = 15.)]
+    #[arg(long, env = "RECHECK_FREQ_MIN", default_value_t = 15.)]
     pub recheck_freq_min: f64,
 
     /// How many blocks to process in parallel
@@ -228,7 +227,7 @@ mod tests {
 
     #[test]
     fn global_args_work_after_subcommand() {
-        let cli = Cli::try_parse_from([
+        let cli = ArchiveCheckCli::try_parse_from([
             "monad-archive-checker",
             "--bucket",
             "test-bucket",

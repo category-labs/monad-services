@@ -18,8 +18,8 @@ use monad_archive::{kvstore::WritePolicy, prelude::*};
 use opentelemetry::KeyValue;
 use tokio::time::interval;
 
-use crate::{
-    checker::{fetch_block_data, process_blocks, store_checking_results},
+use crate::check::{
+    checker::{store_checking_results, stream_and_process_blocks},
     model::{CheckerModel, Fault, FaultKind, GoodBlocks},
     CHUNK_SIZE,
 };
@@ -280,12 +280,9 @@ pub async fn recheck_chunk_from_scratch(
         .map(String::as_str)
         .collect::<Vec<&str>>();
 
-    let data_by_block_num =
-        fetch_block_data(model, chunk_start..=end_block, &replicas, concurrency).await;
-
-    // Process blocks to find faults and good blocks using original checker logic
+    // Fetch and process blocks in one pass using original checker logic
     let (new_faults_by_replica, new_good_blocks) =
-        process_blocks(&data_by_block_num, chunk_start, end_block);
+        stream_and_process_blocks(model, chunk_start..=end_block, &replicas, concurrency).await;
 
     // Get old results for comparison
     let old_faults_by_replica = model.get_faults_chunks_all_replicas(chunk_start).await?;
@@ -537,7 +534,7 @@ mod tests {
     use monad_archive::{kvstore::WritePolicy, prelude::LatestKind};
 
     use super::*;
-    use crate::{
+    use crate::check::{
         checker::tests::{create_test_block_data, create_test_block_data_range, setup_test_model},
         model::{GoodBlocks, InconsistentBlockReason},
     };

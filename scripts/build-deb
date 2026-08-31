@@ -30,9 +30,7 @@ cd "$root_dir"
 lib_dir="$stage_dir/usr/lib/monad-services"
 mkdir -p "$stage_dir/DEBIAN" "$lib_dir"
 
-for binary in monad-archiver monad-archive-checker monad-indexer monad-block-writer; do
-  install -m 0755 "target/release/$binary" "$lib_dir/$binary"
-done
+install -m 0755 target/release/monad-archive "$lib_dir/monad-archive"
 
 # --- stage libraries ---
 # Bundle libtriedb_driver.so, which is loaded with dlopen at runtime and so

@@ -1,3 +1,38 @@
-# Configuration for the monad-services units. Variables set here are
-# expanded into each unit's ExecStart line; a unit fails to start when a
-# variable it names is missing.
+# Configuration for the monad-services units. The monad-archive binary reads
+# these from its environment; a commented-out variable falls back to its
+# built-in default, and a unit fails to start when a variable it requires is
+# unset.
+
+## Required by the archiver, indexer, and block-writer.
+## For triedb: 'triedb <triedb_path> <concurrent_requests>'
+#BLOCK_DATA_SOURCE=
+
+## Required by the archiver and indexer.
+## For aws: 'aws <bucket_name> <concurrent_requests>'
+#ARCHIVE_SINK=
+
+## Required by the archive-checker: the bucket holding checker state, and
+## the comma-separated replica set to validate,
+## e.g. 'aws bucket-1 20,aws bucket-2 20,aws bucket-3 20'.
+#ARCHIVE_BUCKET=
+#INIT_REPLICAS=
+
+## Required by the block-writer.
+#BLOCK_WRITER_DEST_PATH=
+
+## Optional fallback read source for the archiver.
+#FALLBACK_BLOCK_DATA_SOURCE=
+
+## Optional path to bft blocks the archiver uploads to the archive sink.
+#BFT_BLOCK_PATH=
+
+## Archiver concurrency (default 15).
+#MAX_CONCURRENT_BLOCKS=
+
+# Metrics collector for every unit; metrics are disabled when unset.
+OTEL_ENDPOINT=http://127.0.0.1:4317
+
+# Checker settings carried over from the previous unit command lines
+# (defaults: unlimited compute threads, 15 minute recheck).
+MAX_COMPUTE_THREADS=2
+RECHECK_FREQ_MIN=50

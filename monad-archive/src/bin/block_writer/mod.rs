@@ -17,12 +17,11 @@ use std::vec::IntoIter;
 
 use alloy_consensus::Block as AlloyBlock;
 use alloy_rlp::Encodable;
-use clap::Parser;
 use monad_archive::{kvstore::WritePolicy, prelude::*};
 use monad_compress::{brotli::BrotliCompression, CompressionAlgo};
 use tracing::Level;
 
-mod cli;
+pub mod cli;
 
 async fn process_block(
     reader: &BlockDataReaderErased,
@@ -75,11 +74,8 @@ async fn process_block(
     Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
+pub async fn run(args: cli::ArchiveBlockWriterCli) -> Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
-
-    let args = cli::Cli::parse();
     info!(?args, "Cli Arguments: ");
 
     // Handle SetStartBlock separately since it doesn't need shared args

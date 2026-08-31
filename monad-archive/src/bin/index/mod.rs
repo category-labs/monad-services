@@ -23,18 +23,17 @@ mod index_worker;
 use index_worker::index_worker;
 use tracing::{info, Level};
 
-use crate::{migrate_capped::migrate_to_uncapped, migrate_logs::run_migrate_logs};
+use crate::index::{migrate_capped::migrate_to_uncapped, migrate_logs::run_migrate_logs};
 
-mod cli;
+pub mod cli;
 mod migrate_capped;
 mod migrate_logs;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+pub async fn run(args: cli::ArchiveIndexCliArgs) -> Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
-    match cli::Cli::parse() {
-        cli::ParsedCli::Command { command, args } => match command {
+    match cli::ArchiveIndexCli::parse(args) {
+        cli::ArchiveIndexParsedCli::Command { command, args } => match command {
             cli::Commands::MigrateLogs {
                 start_block,
                 stop_block,
@@ -71,14 +70,14 @@ async fn main() -> Result<()> {
                 run_set_start_block(block, archive_sink, async_backfill).await
             }
         },
-        cli::ParsedCli::Daemon(args) => {
+        cli::ArchiveIndexParsedCli::Daemon(args) => {
             info!(?args, "Cli Arguments: ");
             run_indexer(args).await
         }
     }
 }
 
-async fn run_indexer(args: cli::Cli) -> Result<()> {
+async fn run_indexer(args: cli::ArchiveIndexCli) -> Result<()> {
     let metrics = Metrics::new(
         args.otel_endpoint,
         "monad-indexer",

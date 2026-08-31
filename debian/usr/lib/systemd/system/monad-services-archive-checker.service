@@ -7,11 +7,19 @@ Wants=network-online.target
 Type=simple
 User=monad
 Group=monad
+StateDirectory=monad-services
+WorkingDirectory=/var/lib/monad-services
 EnvironmentFile=-/etc/monad-services/env
-ExecStart=/usr/lib/monad-services/monad-archive-checker
+ExecStart=/usr/lib/monad-services/monad-archive check checker
 Restart=always
 RestartSec=5
+DeviceAllow=/dev/triedb rw
 LimitNOFILE=1048576
+# Hugemem configs below
+LimitMEMLOCK=infinity
+MemoryDenyWriteExecute=false
+ProtectKernelModules=no
+ProtectKernelLogs=no
 
 [Install]
 WantedBy=multi-user.target
