@@ -3,7 +3,7 @@ set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 output_dir=${DEB_OUTPUT_DIR:-"$root_dir/dist"}
-strip_symbols=${STRIP_SYMBOLS:-0}
+strip_symbols=${STRIP_SYMBOLS:-1}
 # Stage outside target/, which is a shared cache mount in container builds.
 stage_root=$(mktemp -d)
 trap 'rm -rf "$stage_root"' EXIT
