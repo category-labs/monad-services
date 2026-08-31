@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use alloy_consensus::proofs::{calculate_receipt_root, calculate_transaction_root};
 use eyre::Result;
-use futures::stream;
+use futures::{stream, Stream, StreamExt};
 use monad_archive::prelude::*;
 
 use crate::check::{
@@ -101,15 +101,11 @@ async fn process_block_batch(
         "Fetching block data from replicas"
     );
 
-    let data_by_block_num =
-        fetch_block_data(model, start_block..=end_block, &replicas, concurrency).await;
-
-    debug!("Fetched data for {} blocks", data_by_block_num.len());
-
-    // Process blocks to find faults and good blocks
-    info!("Processing blocks to find faults and good blocks");
+    // Fetch and check in one pass, so only `concurrency` blocks are held at a
+    // time rather than the whole chunk.
+    info!("Fetching and processing blocks to find faults and good blocks");
     let (faults_by_replica, good_blocks) =
-        process_blocks(&data_by_block_num, start_block, end_block);
+        stream_and_process_blocks(model, start_block..=end_block, &replicas, concurrency).await;
 
     // Count total faults and good blocks
     let total_faults: usize = faults_by_replica.values().map(|v| v.len()).sum();
@@ -144,8 +140,29 @@ pub async fn fetch_block_data(
 ) -> HashMap<u64, HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>> {
     debug!("Fetching block data for {} replicas", replicas.len());
 
+    fetch_block_data_stream(model, block_nums, replicas, concurrency)
+        .collect()
+        .await
+}
+
+/// Yields each block's per-replica data as it arrives, in block order.
+///
+/// `buffered` keeps at most `concurrency` blocks in flight, so a consumer that
+/// handles each block as it lands never holds more than that, however long the
+/// requested range is.
+fn fetch_block_data_stream<'a>(
+    model: &'a CheckerModel,
+    block_nums: impl IntoIterator<Item = u64> + 'a,
+    replicas: &'a [&'a str],
+    concurrency: usize,
+) -> impl Stream<
+    Item = (
+        u64,
+        HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>,
+    ),
+> + 'a {
     stream::iter(block_nums)
-        .map(|block_num| async move {
+        .map(move |block_num| async move {
             let mut block_data = HashMap::new();
 
             debug!(block_num, "Fetching data for block");
@@ -162,44 +179,101 @@ pub async fn fetch_block_data(
             (block_num, block_data)
         })
         .buffered(concurrency)
-        .collect::<Vec<(
-            u64,
-            HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>,
-        )>>()
-        .await
-        .into_iter()
-        .collect()
+}
+
+/// Fetches and checks a range of blocks in one pass.
+///
+/// Equivalent to `fetch_block_data` followed by `process_blocks`, but each block
+/// is dropped once it has been checked instead of the whole range being held in
+/// memory first. Only the faults and good-block markers are retained, and those
+/// are a few bytes per block.
+pub async fn stream_and_process_blocks(
+    model: &CheckerModel,
+    block_nums: impl IntoIterator<Item = u64>,
+    replicas: &[&str],
+    concurrency: usize,
+) -> (HashMap<String, Vec<Fault>>, GoodBlocks) {
+    let mut processor = BlockProcessor::default();
+    let blocks = fetch_block_data_stream(model, block_nums, replicas, concurrency);
+    let mut blocks = std::pin::pin!(blocks);
+
+    while let Some((block_num, replica_data)) = blocks.next().await {
+        debug!(block_num, "Processing block");
+        processor.process(block_num, &replica_data);
+    }
+
+    processor.finish()
+}
+
+/// Checks blocks one at a time, carrying the previous block's headers forward so
+/// the parent-hash check still works without keeping earlier blocks around.
+#[derive(Default)]
+struct BlockProcessor {
+    faults_by_replica: HashMap<String, Vec<Fault>>,
+    good_blocks: GoodBlocks,
+    prev_headers: HashMap<String, Header>,
+}
+
+impl BlockProcessor {
+    fn process(
+        &mut self,
+        block_num: u64,
+        replica_data: &HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>,
+    ) {
+        let parents = std::mem::take(&mut self.prev_headers);
+        process_single_block(
+            block_num,
+            replica_data,
+            parents,
+            &mut self.faults_by_replica,
+            &mut self.good_blocks,
+        );
+        self.prev_headers = replica_data
+            .iter()
+            .filter_map(|(replica_name, block_data)| {
+                Some((replica_name.clone(), block_data.as_ref()?.0.header.clone()))
+            })
+            .collect();
+    }
+
+    /// Drops the carried headers, so the next block is treated as having no
+    /// parent -- what a gap in the range means.
+    #[cfg(test)]
+    fn skip(&mut self) {
+        self.prev_headers.clear();
+    }
+
+    fn finish(self) -> (HashMap<String, Vec<Fault>>, GoodBlocks) {
+        (self.faults_by_replica, self.good_blocks)
+    }
 }
 
 /// Processes blocks to find faults and good blocks by comparing data across replicas.
+///
+/// Retained for tests that drive the checking logic from a hand-built map;
+/// production paths use [`stream_and_process_blocks`], which shares the same
+/// [`BlockProcessor`] core.
+#[cfg(test)]
 pub fn process_blocks(
     data_by_block_num: &HashMap<u64, HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>>,
     start_block: u64,
     end_block: u64,
 ) -> (HashMap<String, Vec<Fault>>, GoodBlocks) {
-    let mut faults_by_replica: HashMap<String, Vec<Fault>> = HashMap::new();
-    let mut good_blocks = GoodBlocks {
-        block_num_to_replica: HashMap::new(),
-    };
+    let mut processor = BlockProcessor::default();
 
     debug!(start_block, end_block, "Processing blocks");
 
     for block_num in start_block..=end_block {
         if let Some(replica_data) = data_by_block_num.get(&block_num) {
-            let prev_headers = get_prev_header(block_num, data_by_block_num);
-
             debug!(block_num, "Processing block");
-            process_single_block(
-                block_num,
-                replica_data,
-                prev_headers,
-                &mut faults_by_replica,
-                &mut good_blocks,
-            );
+            processor.process(block_num, replica_data);
         } else {
             debug!(block_num, "No data found for block");
+            processor.skip();
         }
     }
+
+    let (faults_by_replica, good_blocks) = processor.finish();
 
     // Log summary of processed blocks
     let total_faults: usize = faults_by_replica.values().map(|v| v.len()).sum();
@@ -208,24 +282,6 @@ pub fn process_blocks(
     debug!(total_faults, good_block_count, "Processing complete");
 
     (faults_by_replica, good_blocks)
-}
-
-fn get_prev_header(
-    block_num: u64,
-    data_by_block_num: &HashMap<u64, HashMap<String, Option<(Block, BlockReceipts, BlockTraces)>>>,
-) -> HashMap<String, Header> {
-    let Some(prev_block_num) = block_num.checked_sub(1) else {
-        return HashMap::new();
-    };
-    let Some(prev_block_data) = data_by_block_num.get(&prev_block_num) else {
-        return HashMap::new();
-    };
-    prev_block_data
-        .iter()
-        .filter_map(|(replica_name, block_data)| {
-            Some((replica_name.clone(), block_data.as_ref()?.0.header.clone()))
-        })
-        .collect()
 }
 
 /// Processes a single block across all replicas
