@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+case "$1" in
+  remove|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      for unit in monad-services-archiver monad-services-archive-checker monad-services-indexer monad-services-block-writer; do
+        systemctl stop "$unit.service" || true
+      done
+    fi
+    ;;
+esac
