@@ -41,7 +41,7 @@ pub async fn run(args: cli::ArchiveCheckCli) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive("monad_archive_checker=debug".parse()?)
+                .with_default_directive("monad_archive::check=debug".parse()?)
                 .from_env_lossy(),
         )
         .init();
