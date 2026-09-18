@@ -3,11 +3,11 @@ resolver = "2"
 members = ["monad-*"]
 
 [workspace.metadata.cargo-shear]
-ignored = ["monad-archive", "monad-query-primitives"]
+ignored = ["monad-archive", "monad-query-types"]
 
 [workspace.dependencies]
-monad-archive          = { path = "./monad-archive" }
-monad-query-primitives = { path = "./monad-query-primitives" }
+monad-archive     = { path = "./monad-archive" }
+monad-query-types = { path = "./monad-query-types" }
 
 monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
 monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
@@ -34,7 +34,6 @@ enum_dispatch = "0.3.13"
 eyre = "0.6.12"
 futures = "0.3"
 hex = "0.4"
-itertools = "0.13"
 mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
 num_enum = "0.7.6"
 opentelemetry = "0.31"
