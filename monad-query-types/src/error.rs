@@ -13,25 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_primitives::B256;
-use alloy_rlp::{RlpDecodable, RlpEncodable};
+use thiserror::Error;
 
-use crate::{QueryError, QueryResult};
+pub type QueryResult<T> = std::result::Result<T, QueryError>;
 
-/// Reader-visible finalized-head watermark and row-chain digest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, RlpEncodable, RlpDecodable)]
-pub struct PublicationState {
-    pub indexed_finalized_head: u64,
-    pub head_row_chain: B256,
-}
-
-impl PublicationState {
-    pub fn encode(self) -> Vec<u8> {
-        alloy_rlp::encode(self)
-    }
-
-    pub fn decode(bytes: &[u8]) -> QueryResult<Self> {
-        alloy_rlp::decode_exact(bytes)
-            .map_err(|_| QueryError::Decode("invalid publication state rlp"))
-    }
+#[derive(Debug, Error)]
+pub enum QueryError {
+    #[error("backend error: {0}")]
+    Backend(String),
+    #[error("decode error: {0}")]
+    Decode(&'static str),
+    #[error("invalid request: {0}")]
+    InvalidRequest(&'static str),
+    #[error("internal error: {0}")]
+    Internal(&'static str),
+    #[error("invalid block: {0}")]
+    InvalidBlock(&'static str),
+    #[error("missing data: {0}")]
+    MissingData(&'static str),
 }

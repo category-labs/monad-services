@@ -13,14 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod call_kind;
-pub mod error;
-pub mod ids;
-pub mod metadata;
-pub mod payload;
-pub mod publication;
-pub mod query;
-pub mod reader;
-pub mod refs;
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 
-pub use self::error::*;
+use crate::{QueryError, QueryResult};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RlpEncodable, RlpDecodable)]
+pub struct PrimaryId(u64);
+
+impl PrimaryId {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
+    pub fn checked_add(self, rhs: u64) -> QueryResult<Self> {
+        self.0
+            .checked_add(rhs)
+            .map(Self)
+            .ok_or(QueryError::Decode("primary id overflow"))
+    }
+}

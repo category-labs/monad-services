@@ -13,22 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{future::Future, pin::Pin};
+pub use self::{call_kind::*, error::*, id::*};
 
-use crate::QueryResult;
-
-/// Raw object bytes returned by an [`ExternalBlobReader`].
-pub type RawBytes = bytes::Bytes;
-
-/// Read-only byte-range access to external archive objects.
-pub trait ExternalBlobReader: Send + Sync + 'static {
-    /// Reads `[start, end_exclusive)` of `key`; `Ok(None)` when the object is
-    /// absent. Semantics match the store's `BlobStore::read_range`: the end
-    /// clamps to EOF, a start strictly past EOF is an error.
-    fn read_range(
-        &self,
-        key: &[u8],
-        start: usize,
-        end_exclusive: usize,
-    ) -> Pin<Box<dyn Future<Output = QueryResult<Option<RawBytes>>> + Send + '_>>;
-}
+mod call_kind;
+mod error;
+mod id;

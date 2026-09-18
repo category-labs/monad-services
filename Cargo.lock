@@ -3756,13 +3756,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "monad-query-primitives"
+name = "monad-query-types"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
  "alloy-rlp",
- "bytes",
- "itertools 0.13.0",
  "num_enum",
  "thiserror 1.0.69",
 ]
