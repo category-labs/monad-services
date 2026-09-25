@@ -1,0 +1,17 @@
+[Unit]
+Description=Monad Indexer (monad-services)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monad
+Group=monad
+EnvironmentFile=-/etc/monad-services/env
+ExecStart=/usr/lib/monad-services/monad-indexer
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
