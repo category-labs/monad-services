@@ -3,11 +3,12 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.metadata.cargo-shear]
-ignored = ["monad-archive", "monad-query-types"]
+ignored = ["monad-archive", "monad-query-schema"]
 
 [workspace.dependencies]
-monad-archive     = { path = "./crates/monad-archive" }
-monad-query-types = { path = "./crates/monad-query-types" }
+monad-archive      = { path = "./crates/monad-archive" }
+monad-query-schema = { path = "./crates/monad-query-schema" }
+monad-query-types  = { path = "./crates/monad-query-types" }
 
 monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
 monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
