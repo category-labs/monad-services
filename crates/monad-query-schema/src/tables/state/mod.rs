@@ -13,6 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod bitmap;
-pub mod family;
-pub mod tables;
+use monad_query_types::{
+    store::meta::{table::MetaTable, MetaStore},
+    QueryResult,
+};
+
+use self::index::StateIndexSchema;
+
+pub mod index;
+
+pub struct StateTables<M>
+where
+    M: MetaStore,
+{
+    pub index: MetaTable<M, StateIndexSchema>,
+}
+
+impl<M> StateTables<M>
+where
+    M: MetaStore,
+{
+    pub fn new(store: M) -> Self {
+        Self {
+            index: MetaTable::new(store),
+        }
+    }
+
+    pub async fn init(&self) -> QueryResult<()> {
+        self.index.init().await
+    }
+}
