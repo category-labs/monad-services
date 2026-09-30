@@ -3756,6 +3756,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "monad-query-schema"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rlp",
+ "monad-query-types",
+ "num_enum",
+ "strum",
+]
+
+[[package]]
 name = "monad-query-types"
 version = "0.1.0"
 dependencies = [
