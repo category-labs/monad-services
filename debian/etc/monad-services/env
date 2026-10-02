@@ -1,0 +1,3 @@
+# Configuration for the monad-services units. Variables set here are
+# expanded into each unit's ExecStart line; a unit fails to start when a
+# variable it names is missing.

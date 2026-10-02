@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+# --- toolchain (matches the release build, in docker/debian-package/Dockerfile) ---
+export CC="${CC:-gcc-15}"
+export CXX="${CXX:-g++-15}"
+export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
+# monad-triedb's build script builds libtriedb_driver.so from this target.
+export TRIEDB_TARGET="${TRIEDB_TARGET:-triedb_driver}"
+# Arch flags reach the cargo build only; the cmake toolchain file owns its own.
+asmflags="${ASMFLAGS:--march=haswell}"
+cflags="${CFLAGS:--march=haswell}"
+cxxflags="${CXXFLAGS:--march=haswell}"
+
+cd "$root_dir"
+
+# --- rust binaries ---
+# monad-triedb and the execution bindings it needs are built by Cargo build
+# scripts out of the pinned monad-bft git dependency; there is no local
+# execution checkout to build separately.
+ASMFLAGS="$asmflags" CFLAGS="$cflags" \
+CXXFLAGS="$cxxflags -DQUILL_ACTIVE_LOG_LEVEL=QUILL_LOG_LEVEL_CRITICAL" \
+cargo build --locked --release --package monad-archive --bins
