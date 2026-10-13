@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{future::Future, hash::Hash, marker::PhantomData};
+use std::{collections::BTreeMap, future::Future, hash::Hash, marker::PhantomData};
 
 use bytes::Bytes;
 use itertools::Itertools;
@@ -35,7 +35,6 @@ impl PartitionItemBoundaries {
         {
             return Err(QueryError::Decode("invalid partition item boundaries"));
         }
-
         Ok(Self(boundaries))
     }
 
@@ -52,7 +51,7 @@ impl PartitionItemBoundaries {
 }
 
 pub trait PartitionedBlobTable: Send + Sync {
-    type Key: TableKey + Clone + Eq + Hash;
+    type Key: TableKey + Clone + Eq + Hash + Ord;
     type Item: TableValue;
 
     fn get_many(
@@ -63,8 +62,23 @@ pub trait PartitionedBlobTable: Send + Sync {
 
     fn append(
         &self,
-        items: Box<[(Self::Key, Self::Item)]>,
+        key: Self::Key,
+        committed_end: u64,
+        items: Box<[Self::Item]>,
     ) -> impl Future<Output = QueryResult<Box<[u64]>>> + Send;
+
+    fn append_batch(
+        &self,
+        items: BTreeMap<Self::Key, (u64, Box<[Self::Item]>)>,
+    ) -> impl Future<Output = QueryResult<BTreeMap<Self::Key, Box<[u64]>>>> + Send {
+        async move {
+            let mut ends = BTreeMap::new();
+            for (key, (committed_end, items)) in items {
+                ends.insert(key.clone(), self.append(key, committed_end, items).await?);
+            }
+            Ok(ends)
+        }
+    }
 }
 
 pub struct PartitionSchemaBlobTable<T, K, V>
@@ -89,12 +103,39 @@ where
             _phantom: PhantomData,
         }
     }
+
+    async fn prepare_append(
+        &self,
+        key: K,
+        committed_end: u64,
+        items: Box<[V]>,
+    ) -> QueryResult<(K, Bytes, Box<[u64]>)> {
+        let mut bytes = self
+            .table
+            .get::<_, Bytes>(&key)
+            .await?
+            .map(|value| value.to_vec())
+            .unwrap_or_default();
+        let committed_end = usize::try_from(committed_end)
+            .map_err(|_| QueryError::Decode("committed payload offset overflows usize"))?;
+        if committed_end > bytes.len() {
+            return Err(QueryError::Decode("committed payload exceeds blob length"));
+        }
+        bytes.truncate(committed_end);
+
+        let mut ends = Vec::with_capacity(items.len());
+        for item in items {
+            bytes.extend_from_slice(&item.encode());
+            ends.push(bytes.len() as u64);
+        }
+        Ok((key, Bytes::from(bytes), ends.into_boxed_slice()))
+    }
 }
 
 impl<T, K, V> PartitionedBlobTable for PartitionSchemaBlobTable<T, K, V>
 where
     T: BlobTable,
-    K: TableKey + Clone + Eq + Hash + Send + Sync,
+    K: TableKey + Clone + Eq + Hash + Ord + Send + Sync,
     V: TableValue,
 {
     type Key = K;
@@ -106,55 +147,38 @@ where
         boundaries: &PartitionItemBoundaries,
     ) -> QueryResult<Option<Box<[V]>>> {
         let (start, end) = boundaries.range();
-
         let Some(bytes) = self.table.get_range::<_, Bytes>(key, start, end).await? else {
             return Ok(None);
         };
-
         boundaries
             .iter()
             .map(|(item_start, item_end)| {
-                let relative_start = item_start - start;
-                let relative_end = item_end - start;
-                V::decode(bytes.slice(relative_start..relative_end))
+                V::decode(bytes.slice(item_start - start..item_end - start))
             })
-            .collect::<QueryResult<Box<[V]>>>()
+            .collect::<QueryResult<Box<_>>>()
             .map(Some)
     }
 
-    async fn append(&self, items: Box<[(K, V)]>) -> QueryResult<Box<[u64]>> {
-        let mut ends = vec![0; items.len()].into_boxed_slice();
+    async fn append(&self, key: K, committed_end: u64, items: Box<[V]>) -> QueryResult<Box<[u64]>> {
+        let (key, bytes, ends) = self.prepare_append(key, committed_end, items).await?;
+        self.table.put(&key, bytes).await?;
+        Ok(ends)
+    }
 
-        let write_groups = items
-            .into_vec()
-            .into_iter()
-            .enumerate()
-            .map(|(idx, (key, value))| (key, (idx, value)))
-            .into_group_map();
+    async fn append_batch(
+        &self,
+        items: BTreeMap<K, (u64, Box<[V]>)>,
+    ) -> QueryResult<BTreeMap<K, Box<[u64]>>> {
+        let mut ends = BTreeMap::new();
+        let mut writes = Vec::with_capacity(items.len());
 
-        let mut writes = Vec::with_capacity(write_groups.len());
-
-        for (key, values) in write_groups {
-            let mut bytes = self
-                .table
-                .get::<_, Bytes>(&key)
-                .await?
-                .map(|value| value.to_vec())
-                .unwrap_or_default();
-
-            for (index, value) in values {
-                bytes.extend_from_slice(&value.encode());
-                ends[index] = bytes.len() as u64;
-            }
-
-            writes.push(BlobTablePutBatch {
-                key,
-                value: Bytes::from(bytes),
-            });
+        for (key, (committed_end, items)) in items {
+            let (key, bytes, item_ends) = self.prepare_append(key, committed_end, items).await?;
+            ends.insert(key.clone(), item_ends);
+            writes.push(BlobTablePutBatch { key, value: bytes });
         }
 
         self.table.put_batch(writes.into_boxed_slice()).await?;
-
         Ok(ends)
     }
 }
