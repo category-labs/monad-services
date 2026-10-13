@@ -1,0 +1,16 @@
+[package]
+name = "monad-query-write"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+monad-query-schema = { workspace = true }
+monad-query-types = { workspace = true }
+
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+futures = { workspace = true }
+itertools = { workspace = true }
+roaring = { workspace = true }
+strum = { workspace = true }
+tracing = { workspace = true }

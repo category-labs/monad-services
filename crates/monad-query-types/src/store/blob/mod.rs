@@ -67,7 +67,7 @@ pub trait BlobStore: Send + Sync + 'static {
             };
 
             if end_exclusive > blob.len() {
-                return Err(QueryError::Decode("invalid blob range"));
+                return Err(QueryError::Decode("blob range exceeds blob length"));
             }
 
             Ok(Some(blob.slice(start..end_exclusive)))

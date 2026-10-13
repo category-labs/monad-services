@@ -16,7 +16,7 @@
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use monad_query_types::{PrimaryId, QueryResult};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use strum::EnumIter;
+use strum::{EnumCount, EnumIter};
 
 pub use self::{
     block::StoredBlockQueryItem,
@@ -40,6 +40,7 @@ mod transaction;
     PartialOrd,
     Ord,
     Hash,
+    EnumCount,
     EnumIter,
     IntoPrimitive,
     TryFromPrimitive,

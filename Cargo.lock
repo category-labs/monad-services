@@ -3791,6 +3791,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "monad-query-write"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "futures",
+ "itertools 0.13.0",
+ "monad-query-schema",
+ "monad-query-types",
+ "roaring",
+ "strum",
+ "tracing",
+]
+
+[[package]]
 name = "monad-secp"
 version = "0.1.0"
 source = "git+https://github.com/category-labs/monad-bft?tag=v0.16.0#c616743d1358186605e1c1b74a3d6c4fdd9dd48c"

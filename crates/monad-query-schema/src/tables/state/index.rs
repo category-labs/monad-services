@@ -24,10 +24,10 @@ use monad_query_types::{
 
 pub struct StateIndexKey;
 
+#[derive(Default)]
 pub struct StateIndex {
     pub indexed_start: Option<u64>,
-    pub indexed_head: Option<u64>,
-    pub published_head: Option<u64>,
+    pub next_block_id: u64,
     pub next_log_id: u64,
     pub next_tx_id: u64,
     pub next_trace_id: u64,
@@ -46,8 +46,7 @@ impl MetaTableSchema for StateIndexSchema {
         clustering_key: &[],
         columns: &[
             ColumnDef::new_number("indexed_start"),
-            ColumnDef::new_number("indexed_head"),
-            ColumnDef::new_number("published_head"),
+            ColumnDef::new_number("next_block_id"),
             ColumnDef::new_number("next_log_id"),
             ColumnDef::new_number("next_tx_id"),
             ColumnDef::new_number("next_trace_id"),
@@ -70,8 +69,7 @@ impl MetaTableSchema for StateIndexSchema {
     fn columns(value: &Self::Value) -> RowCells {
         Box::new([
             Cell::new_number("indexed_start", value.indexed_start.unwrap_or(0)),
-            Cell::new_number("indexed_head", value.indexed_head.unwrap_or(0)),
-            Cell::new_number("published_head", value.published_head.unwrap_or(0)),
+            Cell::new_number("next_block_id", value.next_block_id),
             Cell::new_number("next_log_id", value.next_log_id),
             Cell::new_number("next_tx_id", value.next_tx_id),
             Cell::new_number("next_trace_id", value.next_trace_id),
@@ -83,11 +81,8 @@ impl MetaTableSchema for StateIndexSchema {
             column: column_indexed_start_name,
             value: column_indexed_start_value,
         }, Cell {
-            column: column_indexed_head_name,
-            value: column_indexed_head_value,
-        }, Cell {
-            column: column_published_head_name,
-            value: column_published_head_value,
+            column: column_next_block_id_name,
+            value: column_next_block_id_value,
         }, Cell {
             column: column_next_log_id_name,
             value: column_next_log_id_value,
@@ -103,15 +98,13 @@ impl MetaTableSchema for StateIndexSchema {
 
         if [
             column_indexed_start_name.as_ref(),
-            column_indexed_head_name.as_ref(),
-            column_published_head_name.as_ref(),
+            column_next_block_id_name.as_ref(),
             column_next_log_id_name.as_ref(),
             column_next_tx_id_name.as_ref(),
             column_next_trace_id_name.as_ref(),
         ] != [
             "indexed_start",
-            "indexed_head",
-            "published_head",
+            "next_block_id",
             "next_log_id",
             "next_tx_id",
             "next_trace_id",
@@ -131,14 +124,10 @@ impl MetaTableSchema for StateIndexSchema {
                 column: column_indexed_start_name,
                 value: column_indexed_start_value,
             })?),
-            indexed_head: Some(number(&Cell {
-                column: column_indexed_head_name,
-                value: column_indexed_head_value,
-            })?),
-            published_head: Some(number(&Cell {
-                column: column_published_head_name,
-                value: column_published_head_value,
-            })?),
+            next_block_id: number(&Cell {
+                column: column_next_block_id_name,
+                value: column_next_block_id_value,
+            })?,
             next_log_id: number(&Cell {
                 column: column_next_log_id_name,
                 value: column_next_log_id_value,
