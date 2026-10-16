@@ -30,22 +30,55 @@ pub struct MetaKey {
     pub clustering: RowCells,
 }
 
+impl MetaKey {
+    pub fn validate_batch_layout(keys: &[Self]) -> QueryResult<()> {
+        if keys
+            .windows(2)
+            .any(|pair| !pair[0].has_same_columns(&pair[1]))
+        {
+            return Err(QueryError::InvalidRequest(
+                "metadata batch keys must have identical ordered columns",
+            ));
+        }
+        Ok(())
+    }
+
+    fn has_same_columns(&self, other: &Self) -> bool {
+        same_columns(&self.partition, &other.partition)
+            && same_columns(&self.clustering, &other.clustering)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaRow {
     pub key: MetaKey,
     pub columns: RowCells,
 }
 
+impl MetaRow {
+    pub fn validate_batch_layout(rows: &[Self]) -> QueryResult<()> {
+        if rows.windows(2).any(|pair| {
+            !pair[0].key.has_same_columns(&pair[1].key)
+                || !same_columns(&pair[0].columns, &pair[1].columns)
+        }) {
+            return Err(QueryError::InvalidRequest(
+                "metadata batch rows must have identical ordered columns",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn same_columns(left: &RowCells, right: &RowCells) -> bool {
+    left.iter()
+        .map(|cell| &cell.column)
+        .eq(right.iter().map(|cell| &cell.column))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetaScanOrder {
     Ascending,
     Descending,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MetaWrite {
-    pub table: MetaTableId,
-    pub row: MetaRow,
 }
 
 pub trait MetaStore: Send + Sync + 'static {
@@ -69,6 +102,7 @@ pub trait MetaStore: Send + Sync + 'static {
         keys: Box<[MetaKey]>,
     ) -> impl Future<Output = QueryResult<Box<[MetaRow]>>> + Send {
         async move {
+            MetaKey::validate_batch_layout(&keys)?;
             let mut rows = Vec::with_capacity(keys.len());
 
             for key in keys {
@@ -109,10 +143,15 @@ pub trait MetaStore: Send + Sync + 'static {
     fn put(&self, table: MetaTableId, row: MetaRow)
         -> impl Future<Output = QueryResult<()>> + Send;
 
-    fn put_batch(&self, writes: Box<[MetaWrite]>) -> impl Future<Output = QueryResult<()>> + Send {
+    fn put_batch(
+        &self,
+        table: MetaTableId,
+        rows: Box<[MetaRow]>,
+    ) -> impl Future<Output = QueryResult<()>> + Send {
         async move {
-            for write in writes {
-                self.put(write.table, write.row).await?;
+            MetaRow::validate_batch_layout(&rows)?;
+            for row in rows {
+                self.put(table, row).await?;
             }
 
             Ok(())

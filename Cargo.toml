@@ -3,13 +3,14 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.metadata.cargo-shear]
-ignored = ["monad-archive", "monad-query-write"]
+ignored = ["monad-archive", "monad-query-write", "monad-query-store"]
 
 [workspace.dependencies]
 monad-archive      = { path = "./crates/monad-archive" }
 monad-query-schema = { path = "./crates/monad-query-schema" }
+monad-query-store  = { path = "./crates/monad-query-store" }
 monad-query-types  = { path = "./crates/monad-query-types" }
-monad-query-write = { path = "./crates/monad-query-write" }
+monad-query-write  = { path = "./crates/monad-query-write" }
 
 monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
 monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
@@ -37,6 +38,7 @@ eyre = "0.6.12"
 futures = "0.3"
 hex = "0.4"
 itertools = "0.13.0"
+libsqlite3-sys = "=0.37.0"
 mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
 num_enum = "0.7.6"
 opentelemetry = "0.31"
@@ -49,6 +51,7 @@ reqwest = { version = "0.12.28", features = ["json"] }
 roaring = "=0.11.5"
 serde = "1.0"
 serde_json = "1.0"
+sqlx = { version = "0.9.0", default-features = false }
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.5"
 thiserror = "1.0"

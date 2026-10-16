@@ -1,0 +1,18 @@
+[package]
+name = "monad-query-store"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["async", "sqlite"]
+
+async = ["dep:tokio", "dep:tracing"]
+sqlite = ["dep:libsqlite3-sys", "dep:sqlx", "async"]
+
+[dependencies]
+monad-query-types = { workspace = true }
+
+libsqlite3-sys = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true, features = ["runtime-tokio", "sqlite"] }
+tokio = { workspace = true, optional = true, features = ["fs", "macros", "rt", "sync", "time"] }
+tracing = { workspace = true, optional = true }
