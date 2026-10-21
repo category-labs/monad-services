@@ -40,6 +40,7 @@ pub async fn init_server(
         eth_call_handler: None,
         chain_id: 1337,
         data_provider: None,
+        chain_data_reader: None,
         event_server_client: None,
         batch_request_limit: 5,
         batch_concurrent_limit: 5,

@@ -14,6 +14,8 @@ monad-query-store = { workspace = true }
 monad-query-types = { workspace = true }
 monad-query-write = { workspace = true }
 
+alloy-consensus = { workspace = true }
+alloy-primitives = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-rlp = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }

@@ -78,6 +78,7 @@ pub mod debug;
 mod debug_replay;
 pub mod eth;
 mod meta;
+pub mod query;
 pub mod resources;
 mod txpool;
 
@@ -547,6 +548,61 @@ async fn eth_createAccessList(
 }
 
 #[allow(non_snake_case)]
+async fn eth_queryBlocks(
+    _: TimingRequestId,
+    app_state: &MonadRpcResources,
+    params: RequestParams<'_>,
+) -> Result<Box<RawValue>, JsonRpcError> {
+    let reader = app_state.chain_data_reader.as_ref().method_not_found()?;
+    let [request] = serde_json::from_str(params.get()).invalid_params()?;
+    query::query_blocks(reader, request).await
+}
+
+#[allow(non_snake_case)]
+async fn eth_queryLogs(
+    _: TimingRequestId,
+    app_state: &MonadRpcResources,
+    params: RequestParams<'_>,
+) -> Result<Box<RawValue>, JsonRpcError> {
+    let reader = app_state.chain_data_reader.as_ref().method_not_found()?;
+    let [request] = serde_json::from_str(params.get()).invalid_params()?;
+    query::query_logs(reader, request).await
+}
+
+#[allow(non_snake_case)]
+async fn eth_queryTransactions(
+    _: TimingRequestId,
+    app_state: &MonadRpcResources,
+    params: RequestParams<'_>,
+) -> Result<Box<RawValue>, JsonRpcError> {
+    let reader = app_state.chain_data_reader.as_ref().method_not_found()?;
+    let [request] = serde_json::from_str(params.get()).invalid_params()?;
+    query::query_transactions(reader, request).await
+}
+
+#[allow(non_snake_case)]
+async fn eth_queryTraces(
+    _: TimingRequestId,
+    app_state: &MonadRpcResources,
+    params: RequestParams<'_>,
+) -> Result<Box<RawValue>, JsonRpcError> {
+    let reader = app_state.chain_data_reader.as_ref().method_not_found()?;
+    let [request] = serde_json::from_str(params.get()).invalid_params()?;
+    query::query_traces(reader, request).await
+}
+
+#[allow(non_snake_case)]
+async fn eth_queryTransfers(
+    _: TimingRequestId,
+    app_state: &MonadRpcResources,
+    params: RequestParams<'_>,
+) -> Result<Box<RawValue>, JsonRpcError> {
+    let reader = app_state.chain_data_reader.as_ref().method_not_found()?;
+    let [request] = serde_json::from_str(params.get()).invalid_params()?;
+    query::query_transfers(reader, request).await
+}
+
+#[allow(non_snake_case)]
 async fn eth_getLogs(
     _: TimingRequestId,
     app_state: &MonadRpcResources,
@@ -942,6 +998,11 @@ enabled_methods!(
     eth_sendRawTransactionSync,
     eth_createAccessList,
     eth_getLogs,
+    eth_queryBlocks,
+    eth_queryLogs,
+    eth_queryTransactions,
+    eth_queryTraces,
+    eth_queryTransfers,
     eth_getTransactionByHash,
     eth_getBlockByHash,
     eth_getBlockByNumber,

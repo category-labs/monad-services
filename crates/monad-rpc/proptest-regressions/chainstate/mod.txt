@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a5400e752bed611aa3d25b2e178589369bc49500641e2111f487cdbfeef8691d # shrinks to log = Log { inner: Log { address: 0x0000000000000000000000000000000000000000, data: LogData { topics: [], data: 0x } }, block_hash: None, block_number: None, block_timestamp: None, transaction_hash: None, transaction_index: None, log_index: None, removed: false }
+cc 376d0d4f8581b32a9687a0fbfe1ef126074a8e2e3e8c4c4f5fff9e834c4b023d # shrinks to log = Log { inner: Log { address: 0x0000000000000000000000000000000000000000, data: LogData { topics: [0x0000000000000000000000000000000000000000000000000000000000000000, 0x0000000000000000000000000000000000000000000000000000000000000000], data: 0x } }, block_hash: None, block_number: None, block_timestamp: None, transaction_hash: None, transaction_index: None, log_index: None, removed: false }

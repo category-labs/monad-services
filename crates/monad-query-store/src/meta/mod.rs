@@ -17,7 +17,7 @@ use monad_query_types::{
     store::meta::{
         column::RowCells,
         table::{MetaTableDef, MetaTableId},
-        MetaKey, MetaRow, MetaScanOrder, MetaStore,
+        MetaKey, MetaRow, MetaScanOrder, MetaStore, MetaWrite,
     },
     QueryResult,
 };
@@ -73,11 +73,7 @@ impl MetaStore for MetaStoreBackend {
         order: MetaScanOrder,
         limit: Option<usize>,
     ) -> QueryResult<Vec<MetaRow>> {
-        with_meta_backend!(self, backend => {
-            backend
-                .get_range(table, partition, start, end, order, limit)
-                .await
-        })
+        with_meta_backend!(self, backend => backend.get_range(table, partition, start, end, order, limit).await)
     }
 
     async fn seek_le(
@@ -86,16 +82,14 @@ impl MetaStore for MetaStoreBackend {
         partition: RowCells,
         clustering: RowCells,
     ) -> QueryResult<Option<MetaRow>> {
-        with_meta_backend!(self, backend => {
-            backend.seek_le(table, partition, clustering).await
-        })
+        with_meta_backend!(self, backend => backend.seek_le(table, partition, clustering).await)
     }
 
     async fn put(&self, table: MetaTableId, row: MetaRow) -> QueryResult<()> {
         with_meta_backend!(self, backend => backend.put(table, row).await)
     }
 
-    async fn put_batch(&self, table: MetaTableId, rows: Box<[MetaRow]>) -> QueryResult<()> {
-        with_meta_backend!(self, backend => backend.put_batch(table, rows).await)
+    async fn put_batch(&self, writes: Box<[MetaWrite]>) -> QueryResult<()> {
+        with_meta_backend!(self, backend => backend.put_batch(writes).await)
     }
 }

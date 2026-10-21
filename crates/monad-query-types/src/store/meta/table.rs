@@ -19,7 +19,7 @@ use tracing::debug;
 
 use super::{
     column::{Cell, CellType, ColumnDef, RowCells},
-    MetaKey, MetaRow, MetaScanOrder, MetaStore,
+    MetaKey, MetaRow, MetaScanOrder, MetaStore, MetaWrite,
 };
 use crate::{QueryError, QueryResult};
 
@@ -248,7 +248,7 @@ where
     }
 
     pub async fn put_batch(&self, writes: Box<[MetaTablePut<TS>]>) -> QueryResult<()> {
-        let rows = writes
+        let writes = writes
             .into_vec()
             .into_iter()
             .map(|write| {
@@ -258,10 +258,13 @@ where
                 TS::DEFINITION.validate_key(&key)?;
                 TS::DEFINITION.validate_row_cells(&columns)?;
 
-                Ok(MetaRow { key, columns })
+                Ok(MetaWrite {
+                    table: TS::TABLE,
+                    row: MetaRow { key, columns },
+                })
             })
             .collect::<QueryResult<Box<[_]>>>()?;
 
-        self.store.put_batch(TS::TABLE, rows).await
+        self.store.put_batch(writes).await
     }
 }

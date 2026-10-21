@@ -19,12 +19,12 @@ use monad_query_schema::family::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryWriterBlock {
+pub struct EvmBlock {
     pub header: StoredBlockQueryItem,
-    pub txs: Box<[QueryWriterTx]>,
+    pub txs: Box<[EvmTx]>,
 }
 
-impl QueryWriterBlock {
+impl EvmBlock {
     pub fn block_number(&self) -> u64 {
         self.header.header.number
     }
@@ -39,7 +39,7 @@ impl QueryWriterBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryWriterTx {
+pub struct EvmTx {
     pub envelope: StoredTxQueryItem,
     pub logs: Box<[StoredLogQueryItem]>,
     pub traces: Box<[StoredTraceQueryItem]>,

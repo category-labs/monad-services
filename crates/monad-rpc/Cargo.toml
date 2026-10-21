@@ -31,6 +31,10 @@ monad-exec-events = { workspace = true, features = ["alloy"] }
 monad-metrics = { workspace = true }
 monad-node-config = { workspace = true, features = ["crypto"] }
 monad-pprof = { workspace = true }
+monad-query-read = { workspace = true }
+monad-query-schema = { workspace = true }
+monad-query-store = { workspace = true }
+monad-query-types = { workspace = true }
 monad-rpc-docs = { workspace = true }
 monad-tracing-timing = { workspace = true }
 monad-triedb-utils = { workspace = true }
@@ -43,10 +47,13 @@ actix-rt = { workspace = true }
 actix-web = { workspace = true }
 actix-ws = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-eip2930 = { workspace = true }
+alloy-eip7702 = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-rpc-types = { workspace = true, features = ["eth"] }
+alloy-sol-types = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 auto_impl = { workspace = true }
@@ -70,6 +77,7 @@ schemars = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
+serde_with = { workspace = true }
 strum = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread", "fs"] }

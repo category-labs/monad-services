@@ -13,34 +13,63 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_consensus::{Transaction, TxEnvelope};
-use alloy_eips::Decodable2718;
-use alloy_primitives::{Address, Bytes, B256};
+use alloy_eip2930::AccessList;
+use alloy_eip7702::SignedAuthorization;
+use alloy_primitives::{Address, Bloom, Bytes, B256, U256};
 use alloy_rlp::{RlpDecodable, RlpEncodable};
-use monad_query_types::{QueryError, QueryResult};
+use monad_query_types::QueryResult;
 
 use crate::{bitmap::BitmapFilterValue, family::BitmapIndexable};
 
 #[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
+#[rlp(trailing)]
 pub struct StoredTxQueryItem {
-    pub tx_hash: B256,
+    pub block_timestamp: u64,
+
+    // Tx Envelope Fields
+    pub transaction_hash: B256,
     pub sender: Address,
-    pub signed_tx_bytes: Bytes,
+    pub nonce: u64,
+    pub tx_type: u8,
+    pub input: Bytes,
+    pub value: U256,
+    pub gas: u64,
+    pub r: U256,
+    pub s: U256,
+    pub y_parity: bool,
+    pub logs_bloom: Bloom,
+
+    // Receipt Fields
+    pub status: bool,
+    pub gas_used: u64,
+    pub cumulative_gas_used: u64,
+    pub effective_gas_price: U256,
+
+    // Optional Tx Envelope Fields
+    pub chain_id: Option<u64>,
+    pub to: Option<Address>,
+    pub gas_price: Option<U256>,
+    pub max_fee_per_gas: Option<U256>,
+    pub max_priority_fee_per_gas: Option<U256>,
+    pub max_fee_per_blob_gas: Option<U256>,
+    pub access_list: Option<AccessList>,
+    pub authorization_list: Option<Vec<SignedAuthorization>>,
+    pub blob_versioned_hashes: Option<Vec<B256>>,
+    pub contract_address: Option<Address>,
 }
 
 impl BitmapIndexable for StoredTxQueryItem {
     fn bitmap_filters(&self) -> QueryResult<Box<[BitmapFilterValue]>> {
-        let envelope = TxEnvelope::decode_2718(&mut &self.signed_tx_bytes[..])
-            .map_err(|_| QueryError::Decode("invalid signed tx envelope"))?;
-
         let mut filters = vec![BitmapFilterValue::From(self.sender)];
 
-        if let Some(to) = envelope.to() {
+        if let Some(to) = self.to {
             filters.push(BitmapFilterValue::To(to));
         }
 
-        if let Some(selector) = envelope.function_selector().map(|selector| selector.0) {
-            filters.push(BitmapFilterValue::Selector(selector));
+        if self.input.len() >= 4 {
+            filters.push(BitmapFilterValue::Selector(
+                self.input[..4].try_into().expect("four-byte selector"),
+            ));
         }
 
         Ok(filters.into_boxed_slice())

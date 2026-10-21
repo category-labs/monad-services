@@ -22,7 +22,6 @@ use clap::Parser;
 use monad_archive::archive_reader::{redact_mongo_url, ArchiveReader};
 use monad_event_ring::{EventRing, EventRingPath};
 use monad_node_config::MonadNodeConfig;
-use monad_pprof::start_pprof_server;
 use monad_rpc::{
     comparator::RpcComparator,
     data::{
@@ -36,10 +35,10 @@ use monad_rpc::{
         rpc_handler,
     },
     middleware::{DecompressionGuard, Metrics, TimingMiddleware},
+    query_reader::{ConfiguredQueryReader, ReaderOpenConfig},
     txpool::EthTxPoolBridge,
     websocket, MONAD_RPC_VERSION,
 };
-use monad_tracing_timing::TimingsLayer;
 use monad_triedb_utils::triedb_env::TriedbEnv;
 use tracing::{debug, error, info, warn};
 use tracing_actix_web::TracingLogger;
@@ -69,36 +68,17 @@ async fn main() -> std::io::Result<()> {
     let node_config: MonadNodeConfig = toml::from_str(&std::fs::read_to_string(&args.node_config)?)
         .expect("node toml parse error");
 
-    tracing::subscriber::set_global_default(
-        Registry::default()
-            .with(
-                FmtLayer::default()
-                    .json()
-                    .with_span_events(FmtSpan::NONE)
-                    .with_current_span(false)
-                    .with_span_list(false)
-                    .with_writer(std::io::stdout)
-                    .with_ansi(false)
-                    .with_filter(EnvFilter::from_default_env()),
-            )
-            .with(TimingsLayer::new()),
-    )
-    .expect("failed to set logger");
-
-    if !args.pprof.is_empty() {
-        tokio::spawn(async {
-            let server = match start_pprof_server(args.pprof) {
-                Ok(server) => server,
-                Err(err) => {
-                    error!("failed to start pprof server: {}", err);
-                    return;
-                }
-            };
-            if let Err(err) = server.await {
-                error!("pprof server faiiled: {}", err);
-            }
-        });
-    }
+    let subscriber = Registry::default().with(
+        FmtLayer::default()
+            .json()
+            .with_span_events(FmtSpan::NONE)
+            .with_current_span(false)
+            .with_span_list(false)
+            .with_writer(std::io::stdout)
+            .with_ansi(false)
+            .with_filter(EnvFilter::from_default_env()),
+    );
+    tracing::subscriber::set_global_default(subscriber).expect("failed to set logger");
 
     MONAD_RPC_VERSION.map(|v| info!("starting monad-rpc with version {}", v));
 
@@ -330,6 +310,24 @@ async fn main() -> std::io::Result<()> {
         None
     };
 
+    let chain_data_reader = match args.chain_data_config.as_ref() {
+        Some(path) => {
+            let contents = tokio::fs::read_to_string(path).await?;
+            let config: ReaderOpenConfig = toml::from_str(&contents).map_err(|error| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("parse chain-data config {}: {error}", path.display()),
+                )
+            })?;
+            let reader = ConfiguredQueryReader::open(config)
+                .await
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            info!(path = %path.display(), "chain-data query reader initialized");
+            Some(Arc::new(reader))
+        }
+        None => None,
+    };
+
     let data_provider =
         triedb_env.map(|t| DataProvider::new(block_buffer_view, Arc::new(t), archive_reader));
 
@@ -345,6 +343,7 @@ async fn main() -> std::io::Result<()> {
         eth_call_handler,
         node_config.chain_id,
         data_provider,
+        chain_data_reader,
         event_server_client.clone(),
         args.batch_request_limit,
         args.batch_concurrent_limit,

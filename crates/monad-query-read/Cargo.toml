@@ -1,0 +1,30 @@
+[package]
+name = "monad-query-read"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+monad-query-schema = { workspace = true }
+monad-query-types = { workspace = true }
+
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-eip2930 = { workspace = true }
+alloy-eip7702 = { workspace = true }
+alloy-primitives = { workspace = true, features = ["rlp", "serde"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+itertools = { workspace = true }
+pin-project-lite = { workspace = true }
+roaring = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+monad-query-store = { workspace = true }
+
