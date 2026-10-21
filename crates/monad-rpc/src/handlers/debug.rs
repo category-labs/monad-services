@@ -1,0 +1,1652 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use alloy_consensus::{Block, BlockBody, TxEnvelope};
+use alloy_eips::eip2718::Encodable2718;
+use alloy_primitives::{
+    aliases::{U256, U64, U8},
+    Address, Bytes, FixedBytes, Log,
+};
+use alloy_rlp::{Decodable, Encodable, RlpDecodable};
+use monad_rpc_docs::rpc;
+use monad_triedb_utils::triedb_env::{BlockKey, Triedb};
+use serde::{Deserialize, Serialize};
+use tracing::{error, trace};
+
+use crate::{
+    data::DataProvider,
+    types::{
+        eth_json::{
+            BlockTagOrHash, BlockTags, EthAddress, EthHash, FixedData, MonadU256, Quantity,
+            UnformattedData,
+        },
+        ethhex,
+        json_serialized_len::JsonSerializedLen,
+        jsonrpc::{ChainStateResultExt, ErrorCode, JsonRpcError, JsonRpcResult},
+    },
+};
+
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
+pub struct DebugBlockParams {
+    block: BlockTags,
+}
+
+#[rpc(method = "debug_getRawBlock", ignore = "max_response_size")]
+#[allow(non_snake_case)]
+/// Returns an RLP-encoded block.
+pub async fn monad_debug_getRawBlock<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    max_response_size: usize,
+    params: DebugBlockParams,
+) -> JsonRpcResult<String> {
+    trace!("monad_debug_getRawBlock: {params:?}");
+
+    let Ok(block) = data_provider
+        .get_block(BlockTagOrHash::BlockTags(params.block), true)
+        .await
+    else {
+        return Err(JsonRpcError::internal_error("block data not found".into()));
+    };
+
+    let alloy_rpc_types::Block {
+        header,
+        transactions,
+        uncles: _,
+        withdrawals: _,
+    } = block;
+
+    let transactions = transactions
+        .into_transactions()
+        .map(|tx| tx.into_inner())
+        .collect::<Vec<_>>();
+
+    let mut txs_heuristic_response_size = 0usize;
+
+    for tx in transactions.iter() {
+        // 2 bytes per input byte
+        txs_heuristic_response_size += 2 * tx.length();
+
+        if txs_heuristic_response_size > max_response_size {
+            return Err(JsonRpcError::max_response_size_exceeded());
+        }
+    }
+
+    let block = Block {
+        header: header.inner,
+        body: BlockBody {
+            transactions,
+            ommers: vec![],
+            withdrawals: None,
+        },
+    };
+
+    let mut res = Vec::new();
+    block.encode(&mut res);
+
+    Ok(ethhex::encode_bytes(&res))
+}
+
+#[rpc(method = "debug_getRawHeader")]
+#[allow(non_snake_case)]
+/// Returns an RLP-encoded header.
+pub async fn monad_debug_getRawHeader<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    params: DebugBlockParams,
+) -> JsonRpcResult<String> {
+    trace!("monad_debug_getRawHeader: {params:?}");
+
+    let Ok(header) = data_provider
+        .get_block_header(BlockTagOrHash::BlockTags(params.block))
+        .await
+    else {
+        return Err(JsonRpcError::internal_error("block data not found".into()));
+    };
+
+    let mut res = Vec::new();
+    header.encode(&mut res);
+
+    Ok(ethhex::encode_bytes(&res))
+}
+
+#[derive(Serialize, Debug, schemars::JsonSchema)]
+#[serde(transparent)]
+pub struct MonadDebugGetRawReceiptsResult {
+    receipts: Vec<String>,
+}
+
+#[rpc(method = "debug_getRawReceipts", ignore = "max_response_size")]
+#[allow(non_snake_case)]
+/// Returns an array of EIP-2718 binary-encoded receipts.
+pub async fn monad_debug_getRawReceipts<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    max_response_size: usize,
+    params: DebugBlockParams,
+) -> JsonRpcResult<MonadDebugGetRawReceiptsResult> {
+    trace!("monad_debug_getRawReceipts: {params:?}");
+
+    let raw_receipts = data_provider
+        .get_raw_receipts(params.block)
+        .await
+        .map_err(|_| JsonRpcError::internal_error("block data not found".into()))?;
+
+    let mut heuristic_response_size = 0usize;
+    let mut receipts = Vec::with_capacity(raw_receipts.len());
+
+    for r in raw_receipts {
+        let mut res = Vec::new();
+        r.encode_2718(&mut res);
+
+        let receipt = ethhex::encode_bytes(&res);
+        heuristic_response_size += 2 + receipt.len();
+
+        if heuristic_response_size > max_response_size {
+            return Err(JsonRpcError::max_response_size_exceeded());
+        }
+
+        receipts.push(receipt);
+    }
+
+    Ok(MonadDebugGetRawReceiptsResult { receipts })
+}
+
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
+pub struct MonadDebugGetRawTransactionParams {
+    tx_hash: EthHash,
+}
+
+#[rpc(method = "debug_getRawTransaction")]
+#[allow(non_snake_case)]
+/// Returns an array of EIP-2718 binary-encoded transactions.
+pub async fn monad_debug_getRawTransaction<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    params: MonadDebugGetRawTransactionParams,
+) -> JsonRpcResult<String> {
+    trace!("monad_debug_getRawTransaction: {params:?}");
+
+    let Ok(tx) = data_provider
+        .get_transaction(&FixedBytes(params.tx_hash.0))
+        .await
+    else {
+        return Err(JsonRpcError::internal_error("block data not found".into()));
+    };
+
+    let tx: &TxEnvelope = tx.inner.inner();
+
+    let mut res = Vec::new();
+    tx.encode_2718(&mut res);
+
+    Ok(ethhex::encode_bytes(&res))
+}
+
+#[derive(Clone, Debug, RlpDecodable)]
+struct CallFrameLog {
+    log: Log,
+    position: U64,
+}
+
+#[derive(Clone, Debug)]
+struct CallFrame {
+    typ: CallKind,
+    #[allow(dead_code)]
+    flags: U64,
+    from: Address,
+    to: Option<Address>,
+    value: U256,
+    gas: U64,
+    gas_used: U64,
+    input: Bytes,
+    output: Bytes,
+    status: U8,
+    depth: U64,
+    logs: Option<Vec<CallFrameLog>>,
+}
+
+impl Decodable for CallFrame {
+    fn decode(rlp_buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let typ: U8 = U8::decode(rlp_buf)?;
+        let flags: U64 = U64::decode(rlp_buf)?;
+        let from: Address = Address::decode(rlp_buf)?;
+
+        // Decode the `to` field, handling the case where it's `None`.
+        let to: Option<Address> = {
+            let first_byte = rlp_buf.first().ok_or(alloy_rlp::Error::InputTooShort)?;
+            if *first_byte == 0x80 {
+                // If the first byte is 0x80, it represents an empty value (None for the Address).
+                *rlp_buf = &rlp_buf[1..]; // Advance the buffer
+                None
+            } else {
+                // Otherwise, decode it as a normal Address.
+                Some(Address::decode(rlp_buf)?)
+            }
+        };
+
+        let value: U256 = U256::decode(rlp_buf)?;
+        let gas: U64 = U64::decode(rlp_buf)?;
+        let gas_used: U64 = U64::decode(rlp_buf)?;
+        let input = Bytes::decode(rlp_buf)?;
+        let output = Bytes::decode(rlp_buf)?;
+        let status: U8 = U8::decode(rlp_buf)?;
+        let depth: U64 = U64::decode(rlp_buf)?;
+        let logs = if rlp_buf.is_empty() {
+            None
+        } else {
+            Some(Vec::decode(rlp_buf)?)
+        };
+
+        let typ = match typ.to::<u8>() {
+            0 if flags == U64::from(1) => CallKind::StaticCall,
+            0 => CallKind::Call,
+            1 => CallKind::DelegateCall,
+            2 => CallKind::CallCode,
+            3 => CallKind::Create,
+            4 => CallKind::Create2,
+            5 => CallKind::SelfDestruct,
+            _ => return Err(alloy_rlp::Error::Custom("Invalid call kind")),
+        };
+
+        Ok(Self {
+            typ,
+            flags,
+            from,
+            to,
+            value,
+            gas,
+            gas_used,
+            input,
+            output,
+            status,
+            depth,
+            logs,
+        })
+    }
+}
+
+#[derive(Deserialize, Debug, Default, schemars::JsonSchema, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct TracerObject {
+    #[serde(default)]
+    pub tracer: Tracer,
+    #[serde(default, rename = "tracerConfig")]
+    pub config: TracerConfig,
+}
+
+#[derive(Deserialize, Debug, Default, schemars::JsonSchema, Clone, Copy, PartialEq, Eq)]
+pub enum Tracer {
+    #[default]
+    #[serde(rename = "callTracer")]
+    CallTracer,
+    #[serde(rename = "prestateTracer")]
+    PreStateTracer,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Default, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TracerConfig {
+    /// onlyTopCall for callTracer, ignored for prestateTracer
+    #[serde(default)]
+    pub only_top_call: bool,
+
+    /// diff mode for prestateTracer, ignored for callTracer
+    #[serde(default)]
+    pub diff_mode: bool,
+
+    /// log for callTracer, ignored for prestateTracer
+    #[serde(default)]
+    pub with_log: bool,
+}
+
+#[derive(Clone, Copy, Deserialize, Debug, schemars::JsonSchema)]
+pub struct MonadDebugTraceTransactionParams {
+    pub tx_hash: EthHash,
+    #[serde(default)]
+    pub tracer: TracerObject,
+}
+
+#[derive(Serialize, Debug, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MonadCallFrameLog {
+    pub address: EthAddress,
+    pub topics: Vec<FixedData<32>>,
+    pub data: UnformattedData,
+    pub position: Quantity,
+    pub index: Quantity,
+}
+
+impl MonadCallFrameLog {
+    fn from_call_frame_log(value: CallFrameLog, index: usize) -> Self {
+        Self {
+            address: value.log.address.into(),
+            topics: value
+                .log
+                .topics()
+                .iter()
+                .map(|&t| FixedData::<32>::from(t))
+                .collect(),
+            data: value.log.data.data.into(),
+            position: Quantity(value.position.to()),
+            index: Quantity(index as u64),
+        }
+    }
+}
+
+#[derive(Serialize, Debug, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MonadCallFrame {
+    #[serde(rename = "type")]
+    pub typ: CallKind,
+    pub from: EthAddress,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<EthAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<MonadU256>,
+    pub gas: Quantity,
+    pub gas_used: Quantity,
+    pub input: UnformattedData,
+    #[serde(skip_serializing_if = "UnformattedData::is_empty")]
+    pub output: UnformattedData,
+    #[serde(skip)]
+    pub depth: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revert_reason: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)] // TODO: handle recursive generation in jsonrpc schema
+    pub calls: Vec<MonadCallFrame>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub logs: Vec<MonadCallFrameLog>,
+}
+
+impl From<CallFrame> for MonadCallFrame {
+    fn from(value: CallFrame) -> Self {
+        // the "value" argument is not included for STATICALL
+        let frame_value = if matches!(value.typ, CallKind::StaticCall) {
+            None
+        } else {
+            Some(MonadU256(value.value))
+        };
+
+        // Status maps to the evmc_status_code enum
+        let error = match value.status.to::<usize>() {
+            0 => None,
+            2 => Some("execution reverted".to_string()),
+            3 => Some("out of gas".to_string()),
+            18 => Some("reserve balance violation".to_string()),
+            _ => Some("error".to_string()),
+        };
+
+        let revert_reason = error
+            .as_ref()
+            .and_then(|_| monad_ethcall::decode_revert_message(&value.output));
+
+        let mut to = value.to.map(Into::into);
+
+        // Historical traces include a Some(NullAddress) for the 'to' field if the contract deployment failed.
+        // Newer traces do not include the 'to' field, so match this behavior.
+        if error.is_some()
+            && matches!(value.typ, CallKind::Create | CallKind::Create2)
+            && value.to.is_some()
+        {
+            to = None;
+        }
+
+        Self {
+            typ: value.typ,
+            from: value.from.into(),
+            to,
+            value: frame_value,
+            gas: Quantity(u64::from_le_bytes(value.gas.to_le_bytes())),
+            gas_used: Quantity(u64::from_le_bytes(value.gas_used.to_le_bytes())),
+            input: value.input.into(),
+            output: value.output.into(),
+            depth: value.depth.to::<usize>(),
+            error,
+            revert_reason,
+            calls: Vec::new(),
+            logs: value
+                .logs
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+                .map(|(i, log)| MonadCallFrameLog::from_call_frame_log(log, i))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Debug, Clone, schemars::JsonSchema, strum::AsRefStr, strum::VariantArray)]
+#[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
+pub enum CallKind {
+    Call,
+    DelegateCall,
+    CallCode,
+    Create,
+    Create2,
+    SelfDestruct,
+    StaticCall,
+}
+
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
+pub struct MonadDebugTraceBlockByHashParams {
+    pub block_hash: EthHash,
+    #[serde(default)]
+    pub tracer: TracerObject,
+}
+
+#[rpc(method = "debug_traceBlockByHash", ignore = "max_response_size")]
+#[allow(non_snake_case)]
+/// Returns the tracing result by executing all transactions in the block specified by the block hash with a tracer.
+pub async fn monad_debug_traceBlockByHash<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    max_response_size: usize,
+    params: MonadDebugTraceBlockByHashParams,
+) -> JsonRpcResult<Vec<MonadDebugTraceBlockResult>> {
+    trace!("monad_debugTraceBlockByHash: {params:?}");
+
+    let (block_key, tx_hashes, call_frames) = data_provider
+        .get_block_call_frames(BlockTagOrHash::Hash(params.block_hash))
+        .await
+        .to_jsonrpc_result()?
+        .ok_or(JsonRpcError::block_not_found())?;
+
+    decode_block_call_frames(
+        &data_provider.triedb_env,
+        block_key,
+        tx_hashes,
+        call_frames,
+        &params.tracer,
+        max_response_size,
+    )
+    .await
+}
+
+#[derive(Clone, Copy, Deserialize, Debug, schemars::JsonSchema)]
+pub struct MonadDebugTraceBlockByNumberParams {
+    pub block_number: BlockTags,
+    #[serde(default)]
+    pub tracer: TracerObject,
+}
+
+#[derive(Serialize, Debug, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MonadDebugTraceBlockResult {
+    pub tx_hash: EthHash,
+    pub result: MonadCallFrame,
+}
+
+#[rpc(method = "debug_traceBlockByNumber", ignore = "max_response_size")]
+#[allow(non_snake_case)]
+/// Returns the tracing result by executing all transactions in the block specified by the block number with a tracer.
+pub async fn monad_debug_traceBlockByNumber<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    max_response_size: usize,
+    params: MonadDebugTraceBlockByNumberParams,
+) -> JsonRpcResult<Vec<MonadDebugTraceBlockResult>> {
+    trace!("monad_debugTraceBlockByNumber: {params:?}");
+
+    let (block_key, tx_hashes, call_frames) = data_provider
+        .get_block_call_frames(BlockTagOrHash::BlockTags(params.block_number))
+        .await
+        .to_jsonrpc_result()?
+        .ok_or(JsonRpcError::block_not_found())?;
+
+    decode_block_call_frames(
+        &data_provider.triedb_env,
+        block_key,
+        tx_hashes,
+        call_frames,
+        &params.tracer,
+        max_response_size,
+    )
+    .await
+}
+
+#[rpc(method = "debug_traceTransaction", ignore = "max_response_size")]
+#[allow(non_snake_case)]
+/// Returns all traces of a given transaction.
+pub async fn monad_debug_traceTransaction<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    max_response_size: usize,
+    params: MonadDebugTraceTransactionParams,
+) -> JsonRpcResult<Option<MonadCallFrame>> {
+    trace!("monad_eth_debugTraceTransaction: {params:?}");
+
+    let Some((block_key, call_frame)) = data_provider
+        .get_transaction_call_frame(params.tx_hash.0)
+        .await
+        .to_jsonrpc_result()?
+        .flatten()
+    else {
+        return Ok(None);
+    };
+
+    let rlp_call_frame = &mut call_frame.as_slice();
+
+    let traces = decode_call_frame(
+        &data_provider.triedb_env,
+        rlp_call_frame,
+        block_key,
+        &params.tracer,
+    )
+    .await?;
+
+    if traces.json_serialized_len() > max_response_size {
+        return Err(JsonRpcError::max_response_size_exceeded());
+    }
+
+    Ok(traces)
+}
+
+async fn decode_block_call_frames<T: Triedb>(
+    triedb_env: &T,
+    block_key: BlockKey,
+    tx_hashes: Vec<alloy_primitives::TxHash>,
+    call_frames: Vec<Vec<u8>>,
+    tracer: &TracerObject,
+    max_response_size: usize,
+) -> JsonRpcResult<Vec<MonadDebugTraceBlockResult>> {
+    if call_frames.len() != tx_hashes.len() {
+        return Err(JsonRpcError::internal_error(
+            "invalid block callframe input".to_string(),
+        ));
+    }
+
+    let mut resp = Vec::new();
+
+    // Running sum of the serialized length of the results decoded so far
+    // and exit early if exceeded max_response_size
+    let mut heuristic_response_size = 0usize;
+
+    for (call_frame, tx_id) in call_frames.into_iter().zip(tx_hashes) {
+        let rlp_call_frame = &mut call_frame.as_slice();
+
+        let Some(traces) = decode_call_frame(triedb_env, rlp_call_frame, block_key, tracer).await?
+        else {
+            return Err(JsonRpcError::internal_error("traces not found".to_string()));
+        };
+
+        let result = MonadDebugTraceBlockResult {
+            tx_hash: FixedData::<32>::from(tx_id),
+            result: traces,
+        };
+
+        heuristic_response_size =
+            heuristic_response_size.saturating_add(result.json_serialized_len());
+
+        if heuristic_response_size > max_response_size {
+            return Err(JsonRpcError::max_response_size_exceeded());
+        }
+
+        resp.push(result);
+    }
+
+    Ok(resp)
+}
+
+pub async fn decode_call_frame<T: Triedb>(
+    triedb_env: &T,
+    rlp_call_frame: &mut &[u8],
+    block_key: BlockKey,
+    tracer: &TracerObject,
+) -> JsonRpcResult<Option<MonadCallFrame>> {
+    let mut call_frames = Vec::<Vec<CallFrame>>::decode(rlp_call_frame)
+        .map_err(|e| {
+            JsonRpcError::with_message(ErrorCode::ServerError, format!("Rlp Decode error: {e}"))
+        })?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    for frame in call_frames.iter_mut() {
+        if tracer.config.with_log {
+            // If logs were requested and there were none stored with the call
+            // frame, this RPC call should be rejected.
+            if frame.logs.is_none() {
+                if matches!(frame.typ, CallKind::SelfDestruct) {
+                    // Fix up a bug for historical traces, where the logs for
+                    // SELFDESTRUCT were stored as None instead of an empty
+                    // vector, causing decoding to fail if any frames in a call
+                    // contained a selfdestruct. This is safe to do, because if
+                    // the transaction is a historical one where there
+                    // legitimately were no logs stored, then one of the other
+                    // frames will cause decoding to fail on a None log entry.
+                    frame.logs = Some(Vec::new());
+                } else {
+                    return Err(JsonRpcError::internal_error(
+                        "logs not found in call frame".to_string(),
+                    ));
+                }
+            }
+        } else {
+            // Logs are stored in TrieDB by default; if the RPC request didn't ask for
+            // them then we need to clear them from the decoded call frames.
+            frame.logs = None;
+        }
+    }
+
+    match tracer.tracer {
+        Tracer::CallTracer => {
+            // Diff mode is supported only by the prestate tracer
+            if tracer.config.diff_mode {
+                return Err(JsonRpcError::new(ErrorCode::MethodNotSupported));
+            }
+
+            if tracer.config.only_top_call {
+                if call_frames.is_empty() {
+                    return Ok(None);
+                }
+
+                if let Some(root_frame) = call_frames.first_mut() {
+                    include_code_output(root_frame, triedb_env, block_key).await?;
+                }
+
+                let mut root = build_call_tree(call_frames);
+
+                if let Some(root) = root.as_mut() {
+                    root.calls.clear();
+                }
+
+                return Ok(root);
+            }
+
+            let call_frames = futures::future::join_all(
+                call_frames
+                    .into_iter()
+                    .map(|mut frame| async move {
+                        include_code_output(&mut frame, triedb_env, block_key).await?;
+                        Ok::<_, JsonRpcError>(frame)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, JsonRpcError>>()?;
+
+            Ok(build_call_tree(call_frames))
+        }
+        _ => Err(JsonRpcError::new(ErrorCode::MethodNotSupported)),
+    }
+}
+
+async fn include_code_output<T: Triedb>(
+    frame: &mut CallFrame,
+    triedb_env: &T,
+    block_key: BlockKey,
+) -> JsonRpcResult<()> {
+    // If the frame is a create or create2 call and the output is empty, include the code output.
+    // Historical traces may not include the code output in their output field.
+    // This is because the code output was not stored in the call frame in the past.
+    // Archiver uses this function to include the code output if it is not present.
+    if !frame.output.is_empty() || !matches!(frame.typ, CallKind::Create | CallKind::Create2) {
+        return Ok(());
+    }
+
+    let Some(contract_addr) = &frame.to else {
+        if frame.status == 0 {
+            error!("expected contract address in call frame");
+            return Err(JsonRpcError::internal_error(
+                "contract address not found in call frame".to_string(),
+            ));
+        }
+
+        return Ok(());
+    };
+
+    let account = triedb_env
+        .get_account(block_key, contract_addr.0.into())
+        .await
+        .map_err(JsonRpcError::internal_error)?;
+
+    frame.output = if let Some(code_hash) = account.code_hash {
+        triedb_env
+            .get_code(block_key, code_hash)
+            .await
+            .map_err(JsonRpcError::internal_error)?
+            .into()
+    } else {
+        Bytes::default()
+    };
+
+    Ok(())
+}
+
+/// Build a call tree from a flat pre-order list of call frames.
+fn build_call_tree(frames: Vec<CallFrame>) -> Option<MonadCallFrame> {
+    let mut frames = frames.into_iter();
+
+    let mut root = MonadCallFrame::from(frames.next()?);
+
+    // Children of the root frame that have not been completely reassembled
+    let mut incomplete_frames: Vec<MonadCallFrame> = Vec::new();
+
+    for next_frame in frames.map(Some).chain(std::iter::once(None)) {
+        let next_frame_depth = next_frame
+            .as_ref()
+            .map_or(0, |frame| frame.depth.to::<usize>());
+
+        while let Some(completed_frame) = incomplete_frames
+            .pop_if(|deepest_incomplete_frame| deepest_incomplete_frame.depth >= next_frame_depth)
+        {
+            let parent_frame = incomplete_frames.last_mut().unwrap_or(&mut root);
+            parent_frame.calls.push(completed_frame);
+        }
+
+        if let Some(next_frame) = next_frame {
+            incomplete_frames.push(MonadCallFrame::from(next_frame));
+        }
+    }
+
+    fn extend_logs_by_emit_order<'a>(
+        frame: &'a mut MonadCallFrame,
+        logs_by_emit_order: &mut Vec<&'a mut MonadCallFrameLog>,
+    ) {
+        let mut frame_logs = frame.logs.iter_mut().peekable();
+
+        for (child_frame_pos, child_frame) in frame.calls.iter_mut().enumerate() {
+            while let Some(log) = frame_logs.next_if(|log| log.position.0 <= child_frame_pos as u64)
+            {
+                logs_by_emit_order.push(log);
+            }
+
+            extend_logs_by_emit_order(child_frame, logs_by_emit_order);
+        }
+
+        logs_by_emit_order.extend(frame_logs);
+    }
+
+    let mut logs_by_emit_order = Vec::new();
+    extend_logs_by_emit_order(&mut root, &mut logs_by_emit_order);
+
+    for (index, log) in logs_by_emit_order.into_iter().enumerate() {
+        log.index = Quantity(index as u64);
+    }
+
+    Some(root)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alloy_consensus::{BlockBody, Header, ReceiptEnvelope, ReceiptWithBloom};
+    use alloy_primitives::Bloom;
+    use alloy_rlp::{BufMut, Encodable};
+    use monad_archive::test_utils::mock_tx;
+    use monad_eth_types::{EthTxHash, ReceiptWithLogIndex, TransactionLocation};
+    use monad_triedb_utils::mock_triedb;
+    use monad_types::SeqNum;
+
+    use super::*;
+    use crate::types::ethhex;
+
+    impl Encodable for CallFrameLog {
+        fn encode(&self, out: &mut dyn BufMut) {
+            let fields: [&dyn Encodable; 2] = [&self.log, &self.position];
+            alloy_rlp::encode_list::<_, dyn Encodable>(&fields, out);
+        }
+    }
+
+    impl Encodable for CallFrame {
+        fn encode(&self, out: &mut dyn BufMut) {
+            let typ: u8 = match self.typ {
+                CallKind::Call => 0,
+                CallKind::StaticCall => 0,
+                CallKind::DelegateCall => 1,
+                CallKind::CallCode => 2,
+                CallKind::Create => 3,
+                CallKind::Create2 => 4,
+                CallKind::SelfDestruct => 5,
+            };
+            typ.encode(out);
+            self.flags.encode(out);
+            self.from.encode(out);
+            if let Some(to) = self.to {
+                to.encode(out);
+            } else {
+                out.put_u8(0x80);
+            }
+            self.value.encode(out);
+            self.gas.encode(out);
+            self.gas_used.encode(out);
+            self.input.encode(out);
+            self.output.encode(out);
+            self.status.encode(out);
+            self.depth.encode(out);
+            if let Some(logs) = &self.logs {
+                logs.encode(out);
+            }
+        }
+    }
+
+    fn make_frame_with_positions(depth: u64, positions: &[u64]) -> CallFrame {
+        let logs = Some(
+            positions
+                .iter()
+                .map(|&pos| CallFrameLog {
+                    log: Log::new_unchecked(Address::ZERO, vec![], Bytes::new()),
+                    position: U64::from(pos),
+                })
+                .collect(),
+        );
+
+        CallFrame {
+            typ: CallKind::Call,
+            flags: U64::ZERO,
+            from: Address::ZERO,
+            to: Some(Address::ZERO),
+            value: U256::ZERO,
+            gas: U64::from(100000u64),
+            gas_used: U64::from(21000u64),
+            input: Bytes::new(),
+            output: Bytes::new(),
+            status: U8::ZERO,
+            depth: U64::from(depth),
+            logs,
+        }
+    }
+
+    fn encode_trace(frames: Vec<CallFrame>) -> Vec<u8> {
+        let mut trace = Vec::new();
+        vec![frames].encode(&mut trace);
+        trace
+    }
+
+    #[tokio::test]
+    async fn test_build_call_tree() {
+        // depth of each call is the following [1, 2, 3, 3]
+        let frames = ethhex::decode_bytes("0xf90aa5f901a0808094f39fd6e51aad88f6f4ce6ab8827279cfffb92266949fe46736679d2d9a65f0992f2272de9f3c7fa6e080831e84808307a930b90144f4a6659c000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000e7f1725e7734ce288f8367e1bb143e90bb3f0512000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000005af3107a40000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000e451980132e65465d0a498c53f0b5227326dd73f8080c0f906c00380949fe46736679d2d9a65f0992f2272de9f3c7fa6e094e451980132e65465d0a498c53f0b5227326dd73f80831d2263830608c3b9068460806040526040516104c43803806104c4833981016040819052610022916102d2565b61002d82825f610034565b50506103e7565b61003d8361005f565b5f825111806100495750805b1561005a57610058838361009e565b505b505050565b610068816100ca565b6040516001600160a01b038216907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a250565b60606100c3838360405180606001604052806027815260200161049d6027913961017d565b9392505050565b6001600160a01b0381163b61013c5760405162461bcd60e51b815260206004820152602d60248201527f455243313936373a206e657720696d706c656d656e746174696f6e206973206e60448201526c1bdd08184818dbdb9d1c9858dd609a1b60648201526084015b60405180910390fd5b7f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc80546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80856001600160a01b031685604051610199919061039a565b5f60405180830381855af49150503d805f81146101d1576040519150601f19603f3d011682016040523d82523d5f602084013e6101d6565b606091505b5090925090506101e8868383876101f2565b9695505050505050565b606083156102605782515f03610259576001600160a01b0385163b6102595760405162461bcd60e51b815260206004820152601d60248201527f416464726573733a2063616c6c20746f206e6f6e2d636f6e74726163740000006044820152606401610133565b508161026a565b61026a8383610272565b949350505050565b8151156102825781518083602001fd5b8060405162461bcd60e51b815260040161013391906103b5565b634e487b7160e01b5f52604160045260245ffd5b5f5b838110156102ca5781810151838201526020016102b2565b50505f910152565b5f80604083850312156102e3575f80fd5b82516001600160a01b03811681146102f9575f80fd5b60208401519092506001600160401b0380821115610315575f80fd5b818501915085601f830112610328575f80fd5b81518181111561033a5761033a61029c565b604051601f8201601f19908116603f011681019083821181831017156103625761036261029c565b8160405282815288602084870101111561037a575f80fd5b61038b8360208301602088016102b0565b80955050505050509250929050565b5f82516103ab8184602087016102b0565b9190910192915050565b602081525f82518060208401526103d38160408501602087016102b0565b601f01601f19169190910160400192915050565b60aa806103f35f395ff3fe608060405236601057600e6013565b005b600e5b601f601b6021565b6057565b565b5f60527f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc546001600160a01b031690565b905090565b365f80375f80365f845af43d5f803e8080156070573d5ff35b3d5ffdfea2646970667358221220dc385d1a646905a2bf7c2558648b32507745ba71a9f460aa1dc57cc1bf40e8ce64736f6c63430008140033416464726573733a206c6f772d6c6576656c2064656c65676174652063616c6c206661696c656400000000000000000000000075537828f2ce51be7289709686a69cbfdbb714f10000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000014415fcc826000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000e7f1725e7734ce288f8367e1bb143e90bb3f0512000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000005af3107a4000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000808001c0f90180018094e451980132e65465d0a498c53f0b5227326dd73f9475537828f2ce51be7289709686a69cbfdbb714f180831c3f6e83051220b9014415fcc826000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000e7f1725e7734ce288f8367e1bb143e90bb3f0512000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000005af3107a40000000000000000000000000000000000000000000000000000000000000000000808002c0f85c800194e451980132e65465d0a498c53f0b5227326dd73f94e7f1725e7734ce288f8367e1bb143e90bb3f0512808318fc7881f884313ce567a000000000000000000000000000000000000000000000000000000000000000128003c0f85c800194e451980132e65465d0a498c53f0b5227326dd73f945fbdb2315678afecb367f032d93f642f64180aa3808318998f81f884313ce567a000000000000000000000000000000000000000000000000000000000000000068003c0").expect("decode call frame");
+        let frames = Vec::<Vec<CallFrame>>::decode(&mut frames.as_slice())
+            .expect("decode call frame")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let result = build_call_tree(frames);
+
+        assert!(result.is_some());
+        let result: MonadCallFrame = result.unwrap();
+        assert_eq!(result.calls.len(), 1);
+
+        result
+            .calls
+            .iter()
+            .enumerate()
+            .for_each(|(idx, frame)| match idx {
+                0 => assert_eq!(frame.calls.len(), 1),
+
+                1 => assert_eq!(frame.calls.len(), 1),
+
+                2 => assert_eq!(frame.calls.len(), 2),
+
+                _ => panic!("unexpected index"),
+            });
+
+        assert_eq!(result.error, None);
+    }
+
+    #[tokio::test]
+    async fn debug_trace_revert() {
+        // Reverted contract call
+        let frame = ethhex::decode_bytes("0xf83ff83d808094f39fd6e51aad88f6f4ce6ab8827279cfffb9226694e7f1725e7734ce288f8367e1bb143e90bb3f0512808307a12082529884b0bea725800280c0").expect("decode call frame");
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let resp = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(resp.is_some());
+
+        let resp = resp.unwrap();
+        assert_eq!(resp.error, Some("execution reverted".to_string()));
+        assert!(resp.revert_reason.is_none());
+        assert_eq!(resp.calls.len(), 0);
+        assert_eq!(
+            ethhex::decode_bytes("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").unwrap(),
+            resp.from.0
+        );
+        assert_eq!(
+            ethhex::decode_bytes("0xe7f1725e7734ce288f8367e1bb143e90bb3f0512").unwrap(),
+            resp.to.unwrap().0
+        );
+        assert_eq!(resp.gas.0, 500000);
+        assert_eq!(resp.gas_used.0, 21144);
+        assert_eq!(resp.input.0, ethhex::decode_bytes("0xb0bea725").unwrap());
+        assert_eq!(resp.output.0, [0u8; 0]);
+        assert!(matches!(resp.typ, CallKind::Call));
+        assert_eq!(resp.value.unwrap().0, U256::ZERO);
+        assert!(resp.logs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn debug_trace_transaction_rejects_oversized_response() {
+        let frame = ethhex::decode_bytes("0xf83ff83d808094f39fd6e51aad88f6f4ce6ab8827279cfffb9226694e7f1725e7734ce288f8367e1bb143e90bb3f0512808307a12082529884b0bea725800280c0").expect("decode call frame");
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let err = monad_debug_traceTransaction(
+            &data_provider,
+            1,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject::default(),
+            },
+        )
+        .await
+        .expect_err("expected response to exceed size limit");
+
+        assert_eq!(err.message, "response exceeds size limit");
+    }
+
+    #[tokio::test]
+    async fn decode_block_call_frames_rejects_when_running_sum_exceeds_limit() {
+        use monad_triedb_utils::triedb_env::FinalizedBlockKey;
+
+        let frame = ethhex::decode_bytes("0xf83ff83d808094f39fd6e51aad88f6f4ce6ab8827279cfffb9226694e7f1725e7734ce288f8367e1bb143e90bb3f0512808307a12082529884b0bea725800280c0").expect("decode call frame");
+        let triedb = mock_triedb::MockTriedb::default();
+        let block_key = BlockKey::Finalized(FinalizedBlockKey(SeqNum(1)));
+        let tracer = TracerObject::default();
+
+        let single = decode_block_call_frames(
+            &triedb,
+            block_key,
+            vec![alloy_primitives::TxHash::default()],
+            vec![frame.clone()],
+            &tracer,
+            usize::MAX,
+        )
+        .await
+        .expect("single frame should decode");
+        let one_len = single[0].json_serialized_len();
+
+        // budget for only one frame, and should be rejected when decoding the second frame
+        let err = decode_block_call_frames(
+            &triedb,
+            block_key,
+            vec![
+                alloy_primitives::TxHash::default(),
+                alloy_primitives::TxHash::from([1u8; 32]),
+            ],
+            vec![frame.clone(), frame.clone()],
+            &tracer,
+            one_len,
+        )
+        .await
+        .expect_err("running sum of two results should exceed the limit");
+        assert_eq!(err.message, "response exceeds size limit");
+
+        // budget that allows all serialization
+        let resp = decode_block_call_frames(
+            &triedb,
+            block_key,
+            vec![
+                alloy_primitives::TxHash::default(),
+                alloy_primitives::TxHash::from([1u8; 32]),
+            ],
+            vec![frame.clone(), frame],
+            &tracer,
+            one_len * 2 + 64,
+        )
+        .await
+        .expect("generous budget should return all results");
+        assert_eq!(resp.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn debug_trace_create() {
+        // contract creation
+        let frame = ethhex::decode_bytes("0xf901baf901b7038094f39fd6e51aad88f6f4ce6ab8827279cfffb9226694dc64a140aa3e981100a9beca4e685f962f0cf6c98083018d9583018a75b8976080604052348015600f57600080fd5b5060e48061001e6000396000f3fe608060405260043610603f5760003560e01c80635c60da1b146044575b600080fd5b605060048036036020811015605857600080fd5b5035606e565b005b6000548156fea2646970667358221220a0f2af6f9a7d2b0c8c3c32bd2d8a4f3d856c7f8a8888a1e0dc8b9a8a2a47e2ea64736f6c63430008000033b8e4608060405260043610603f5760003560e01c80635c60da1b146044575b600080fd5b605060048036036020811015605857600080fd5b5035606e565b005b6000548156fea2646970667358221220a0f2af6f9a7d2b0c8c3c32bd2d8a4f3d856c7f8a8888a1e0dc8b9a8a2a47e2ea64736f6c6343000800003300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008080c0").expect("decode call frame");
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        mock_triedb.set_code(hex::decode("608060405260043610603f5760003560e01c80635c60da1b146044575b600080fd5b605060048036036020811015605857600080fd5b5035606e565b005b6000548156fea2646970667358221220a0f2af6f9a7d2b0c8c3c32bd2d8a4f3d856c7f8a8888a1e0dc8b9a8a2a47e2ea64736f6c634300080000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap());
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let resp: Option<MonadCallFrame> = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(resp.is_some());
+        let resp = resp.unwrap();
+        assert!(resp.calls.is_empty());
+        assert!(resp.error.is_none());
+        assert!(resp.revert_reason.is_none());
+        assert!(matches!(resp.typ, CallKind::Create));
+        assert_eq!(
+            ethhex::decode_bytes("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").unwrap(),
+            resp.from.0
+        );
+        assert_eq!(
+            ethhex::decode_bytes("0xdc64a140aa3e981100a9beca4e685f962f0cf6c9").unwrap(),
+            resp.to.unwrap().0
+        );
+        assert_eq!(resp.gas.0, 101781);
+        assert_eq!(resp.gas_used.0, 100981);
+        assert_eq!(resp.input.0, ethhex::decode_bytes("0x6080604052348015600f57600080fd5b5060e48061001e6000396000f3fe608060405260043610603f5760003560e01c80635c60da1b146044575b600080fd5b605060048036036020811015605857600080fd5b5035606e565b005b6000548156fea2646970667358221220a0f2af6f9a7d2b0c8c3c32bd2d8a4f3d856c7f8a8888a1e0dc8b9a8a2a47e2ea64736f6c63430008000033").unwrap());
+        assert_eq!(resp.output.0, ethhex::decode_bytes("0x608060405260043610603f5760003560e01c80635c60da1b146044575b600080fd5b605060048036036020811015605857600080fd5b5035606e565b005b6000548156fea2646970667358221220a0f2af6f9a7d2b0c8c3c32bd2d8a4f3d856c7f8a8888a1e0dc8b9a8a2a47e2ea64736f6c634300080000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap());
+        assert_eq!(resp.depth, 0);
+        assert!(resp.logs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn debug_trace_logs() {
+        let frame = ethhex::decode_bytes("0xf8e6f8e4808094535353535353535353535353535353535353535394bebebebebebebebebebebebebebebebebebebebe8303a109825ac2820b6186aabbccddee018201028002f8a0f83df83a945353535353535353535353535353535353535353e1a0010200000000000000000000000000000000000000000000000000000000000082effe80f85ff85c94bebebebebebebebebebebebebebebebebebebebef842a00300000000000000000000000000000000000000000000000000000000000000a0040500000000000000000000000000000000000000000000000000000000000082abcd02").expect("decode call frame");
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let resp: Option<MonadCallFrame> = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject {
+                    tracer: Tracer::CallTracer,
+                    config: TracerConfig {
+                        with_log: true,
+                        diff_mode: false,
+                        only_top_call: false,
+                    },
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(resp.is_some());
+        let resp = resp.unwrap();
+        assert!(resp.calls.is_empty());
+        assert!(resp.error.is_none());
+        assert!(resp.revert_reason.is_none());
+        assert!(matches!(resp.typ, CallKind::Call));
+        assert_eq!(
+            ethhex::decode_bytes("0x5353535353535353535353535353535353535353").unwrap(),
+            resp.from.0
+        );
+        assert_eq!(
+            ethhex::decode_bytes("0xbebebebebebebebebebebebebebebebebebebebe").unwrap(),
+            resp.to.unwrap().0
+        );
+        assert_eq!(resp.gas.0, 23234);
+        assert_eq!(resp.gas_used.0, 2913);
+        assert_eq!(
+            resp.input.0,
+            ethhex::decode_bytes("0xaabbccddee01").unwrap()
+        );
+        assert_eq!(resp.output.0, ethhex::decode_bytes("0x0102").unwrap());
+        assert_eq!(resp.depth, 2);
+
+        assert_eq!(resp.logs.len(), 2);
+
+        assert_eq!(
+            ethhex::decode_bytes("0x5353535353535353535353535353535353535353").unwrap(),
+            resp.logs[0].address.0
+        );
+        assert_eq!(resp.logs[0].topics.len(), 1);
+        assert_eq!(
+            ethhex::decode_bytes(
+                "0x0102000000000000000000000000000000000000000000000000000000000000"
+            )
+            .unwrap(),
+            resp.logs[0].topics[0].0
+        );
+        assert_eq!(resp.logs[0].data.0, ethhex::decode_bytes("0xeffe").unwrap());
+        assert_eq!(resp.logs[0].position.0, 0);
+        assert_eq!(resp.logs[0].index.0, 0);
+
+        assert_eq!(
+            ethhex::decode_bytes("0xbebebebebebebebebebebebebebebebebebebebe").unwrap(),
+            resp.logs[1].address.0
+        );
+        assert_eq!(resp.logs[1].topics.len(), 2);
+        assert_eq!(
+            ethhex::decode_bytes(
+                "0x0300000000000000000000000000000000000000000000000000000000000000"
+            )
+            .unwrap(),
+            resp.logs[1].topics[0].0
+        );
+        assert_eq!(
+            ethhex::decode_bytes(
+                "0x0405000000000000000000000000000000000000000000000000000000000000"
+            )
+            .unwrap(),
+            resp.logs[1].topics[1].0
+        );
+        assert_eq!(resp.logs[1].data.0, ethhex::decode_bytes("0xabcd").unwrap());
+        assert_eq!(resp.logs[1].position.0, 2);
+        assert_eq!(resp.logs[1].index.0, 1);
+    }
+
+    #[tokio::test]
+    async fn debug_trace_logs_only_top_call_uses_global_indices() {
+        let frame = encode_trace(vec![
+            make_frame_with_positions(1, &[0, 1]), // root emits before and after its child
+            make_frame_with_positions(2, &[0]),    // child emits between the two root logs
+        ]);
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let resp: Option<MonadCallFrame> = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject {
+                    tracer: Tracer::CallTracer,
+                    config: TracerConfig {
+                        with_log: true,
+                        diff_mode: false,
+                        only_top_call: true,
+                    },
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+        let resp = resp.expect("trace should exist");
+        assert!(resp.calls.is_empty());
+        assert_eq!(resp.logs.len(), 2);
+        assert_eq!(resp.logs[0].position.0, 0);
+        assert_eq!(resp.logs[0].index.0, 0);
+        assert_eq!(resp.logs[1].position.0, 1);
+        assert_eq!(resp.logs[1].index.0, 2);
+    }
+
+    // Tests the backwards compatible case where historical blocks do not have
+    // logs stored with call frames. If `withLog` is passed and there were no
+    // logs stored (distinct from the case where the list of logs is empty), the
+    // RPC server should reject the call. If there were no logs stored but
+    // they're not requested, the call should succeed.
+    #[tokio::test]
+    async fn debug_trace_null_logs() {
+        let frame = ethhex::decode_bytes("0xf844f842808094535353535353535353535353535353535353535394bebebebebebebebebebebebebebebebebebebebe8303a109825ac2820b6186aabbccddee018201028002").expect("decode call frame");
+
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_transaction_location_by_hash(
+            EthTxHash::default(),
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+        );
+
+        mock_triedb.set_call_frame(
+            TransactionLocation {
+                block_num: 1,
+                tx_index: 0,
+            },
+            frame,
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let with_logs_resp = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject {
+                    tracer: Tracer::CallTracer,
+                    config: TracerConfig {
+                        with_log: true,
+                        diff_mode: false,
+                        only_top_call: false,
+                    },
+                },
+            },
+        )
+        .await;
+
+        assert!(with_logs_resp.is_err());
+        assert_eq!(
+            with_logs_resp.err().unwrap().message,
+            "Internal error: logs not found in call frame".to_string()
+        );
+
+        let no_logs_resp = monad_debug_traceTransaction(
+            &data_provider,
+            usize::MAX,
+            MonadDebugTraceTransactionParams {
+                tx_hash: FixedData::<32>([0u8; 32]),
+                tracer: TracerObject {
+                    tracer: Tracer::CallTracer,
+                    config: TracerConfig {
+                        with_log: false,
+                        diff_mode: false,
+                        only_top_call: false,
+                    },
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(no_logs_resp.is_some());
+        let resp = no_logs_resp.unwrap();
+        assert!(resp.calls.is_empty());
+        assert!(resp.error.is_none());
+        assert!(resp.revert_reason.is_none());
+        assert!(matches!(resp.typ, CallKind::Call));
+        assert_eq!(
+            ethhex::decode_bytes("0x5353535353535353535353535353535353535353").unwrap(),
+            resp.from.0
+        );
+        assert_eq!(
+            ethhex::decode_bytes("0xbebebebebebebebebebebebebebebebebebebebe").unwrap(),
+            resp.to.unwrap().0
+        );
+        assert_eq!(resp.gas.0, 23234);
+        assert_eq!(resp.gas_used.0, 2913);
+        assert_eq!(
+            resp.input.0,
+            ethhex::decode_bytes("0xaabbccddee01").unwrap()
+        );
+        assert_eq!(resp.output.0, ethhex::decode_bytes("0x0102").unwrap());
+        assert_eq!(resp.depth, 2);
+    }
+
+    #[tokio::test]
+    async fn debug_raw_receipts() {
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_latest_block(1);
+
+        let receipt = ReceiptWithBloom {
+            receipt: alloy_consensus::Receipt {
+                status: alloy_consensus::Eip658Value::Eip658(true),
+                cumulative_gas_used: 21000,
+                logs: vec![],
+            },
+            logs_bloom: Bloom::default(),
+        };
+
+        mock_triedb.set_receipts(
+            SeqNum(1),
+            vec![ReceiptWithLogIndex {
+                receipt: ReceiptEnvelope::Eip1559(receipt),
+                starting_log_index: 0,
+            }],
+        );
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let result = monad_debug_getRawReceipts(
+            &data_provider,
+            25_000_000,
+            DebugBlockParams {
+                block: BlockTags::Number(Quantity(1)),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.receipts.len(), 1);
+        let expected_receipt = "0x02f9010801825208b9010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0";
+        assert_eq!(result.receipts[0], expected_receipt);
+    }
+
+    #[tokio::test]
+    async fn debug_raw_block_max_response_size_exceeded() {
+        let mut mock_triedb = mock_triedb::MockTriedb::default();
+        mock_triedb.set_latest_block(1);
+
+        let tx = mock_tx(12345);
+        let txs_payload_limit = 2 * tx.tx.length() - 1;
+        let block = Block {
+            header: Header {
+                number: 1,
+                base_fee_per_gas: Some(100),
+                ..Default::default()
+            },
+            body: BlockBody {
+                transactions: vec![tx.tx.clone()],
+                ommers: vec![],
+                withdrawals: None,
+            },
+        };
+
+        mock_triedb.set_finalized_block(SeqNum(1), block.clone());
+
+        let data_provider = DataProvider::new(None, Arc::new(mock_triedb), None);
+        let error = monad_debug_getRawBlock(
+            &data_provider,
+            txs_payload_limit,
+            DebugBlockParams {
+                block: BlockTags::Number(Quantity(1)),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, JsonRpcError::max_response_size_exceeded());
+    }
+
+    #[tokio::test]
+    async fn test_global_log_index_across_nested_calls() {
+        // Test interleaved log indexing based on execution order
+        // Frame order: [root(d1, 2 logs), child1(d2, 3 logs), grandchild(d3, 1 log), child2(d2, 2 logs)]
+        //
+        // Execution order:
+        // 1. Root emits first log (index 0)
+        // 2. Root calls Child1
+        // 3. Child1 emits first log (index 1)
+        // 4. Child1 calls Grandchild
+        // 5. Grandchild emits log (index 2)
+        // 6. Grandchild returns
+        // 7. Child1 emits remaining logs (index 3, 4)
+        // 8. Child1 returns
+        // 9. Root calls Child2
+        // 10. Child2 emits all logs (index 5, 6)
+        // 11. Child2 returns
+        // 12. Root emits remaining log (index 7)
+        let frames = vec![
+            make_frame_with_positions(1, &[0, 2]), // root: 1 log before children, 1 after both
+            make_frame_with_positions(2, &[0, 1, 1]), // child1: 1 log before grandchild, 2 after
+            make_frame_with_positions(3, &[0]),    // grandchild: 1 log (no children)
+            make_frame_with_positions(2, &[0, 0]), // child2: 2 logs (no children)
+        ];
+
+        let result = build_call_tree(frames);
+        assert!(result.is_some());
+
+        let root = result.unwrap();
+
+        assert_eq!(root.logs.len(), 2);
+        assert_eq!(root.logs[0].index.0, 0);
+        assert_eq!(root.logs[1].index.0, 7);
+
+        let first_child = &root.calls[0];
+        assert_eq!(first_child.logs.len(), 3);
+        assert_eq!(first_child.logs[0].index.0, 1);
+        assert_eq!(first_child.logs[1].index.0, 3);
+        assert_eq!(first_child.logs[2].index.0, 4);
+
+        let grandchild = &first_child.calls[0];
+        assert_eq!(grandchild.logs.len(), 1);
+        assert_eq!(grandchild.logs[0].index.0, 2);
+
+        let second_child = &root.calls[1];
+        assert_eq!(second_child.logs.len(), 2);
+        assert_eq!(second_child.logs[0].index.0, 5);
+        assert_eq!(second_child.logs[1].index.0, 6);
+    }
+
+    #[tokio::test]
+    async fn test_contract_a_scenario() {
+        // Test the user's contract scenario:
+        // contract A { emit A0(); new B().b(); new C().c(); emit A1(); }
+        // contract B { new D().d(); }
+        // contract C { emit C0(); }
+        // contract D {}
+
+        let frames = vec![
+            make_frame_with_positions(1, &[0, 4]), // A: A0 at pos 0, A1 at pos 4
+            make_frame_with_positions(2, &[]),     // B_CREATE: no logs
+            make_frame_with_positions(2, &[]),     // B.b: no logs
+            make_frame_with_positions(3, &[]),     // D_CREATE: no logs
+            make_frame_with_positions(3, &[]),     // D.d: no logs
+            make_frame_with_positions(2, &[]),     // C_CREATE: no logs
+            make_frame_with_positions(2, &[0]),    // C.c: C0 at pos 0
+        ];
+
+        let result = build_call_tree(frames);
+        assert!(result.is_some());
+
+        let root = result.unwrap();
+
+        assert_eq!(root.logs.len(), 2);
+        assert_eq!(root.logs[0].index.0, 0); // A0
+        assert_eq!(root.logs[1].index.0, 2); // A1
+
+        let mut found_c0 = false;
+        for child in root.calls.iter() {
+            if !child.logs.is_empty() {
+                assert_eq!(child.logs[0].index.0, 1); // C0
+                found_c0 = true;
+            }
+        }
+        assert!(found_c0, "Should have found C0 log");
+    }
+
+    #[tokio::test]
+    async fn test_log_index_single_frame() {
+        // Test that a single frame correctly indexes its logs from build_call_tree
+        fn make_log(position: u64) -> CallFrameLog {
+            CallFrameLog {
+                log: Log::new_unchecked(Address::ZERO, vec![], Bytes::new()),
+                position: U64::from(position),
+            }
+        }
+
+        let frame = CallFrame {
+            typ: CallKind::Call,
+            flags: U64::ZERO,
+            from: Address::ZERO,
+            to: Some(Address::ZERO),
+            value: U256::ZERO,
+            gas: U64::from(100000u64),
+            gas_used: U64::from(21000u64),
+            input: Bytes::new(),
+            output: Bytes::new(),
+            status: U8::ZERO,
+            depth: U64::from(1u64),
+            logs: Some(vec![make_log(0), make_log(0), make_log(0)]),
+        };
+
+        let result = build_call_tree(vec![frame]);
+        assert!(result.is_some());
+
+        let root = result.unwrap();
+
+        // Single frame with no children should have all logs assigned sequentially
+        assert_eq!(root.logs.len(), 3);
+        assert_eq!(root.logs[0].index.0, 0);
+        assert_eq!(root.logs[1].index.0, 1);
+        assert_eq!(root.logs[2].index.0, 2);
+    }
+
+    #[tokio::test]
+    async fn test_many_logs_single_frame_with_child() {
+        // Parent has 5 logs all at position 0 (before the 1 child call),
+        // child has 1 log at position 0 (no children in child).
+        // Parent logs should have indices 0-4, child log should have index 5.
+
+        let frames = vec![
+            make_frame_with_positions(1, &[0, 0, 0, 0, 0]), // parent: 5 logs at pos 0
+            make_frame_with_positions(2, &[0]),             // child: 1 log at pos 0
+        ];
+
+        let root = build_call_tree(frames).unwrap();
+
+        assert_eq!(root.logs[0].index.0, 0);
+        assert_eq!(root.logs[1].index.0, 1);
+        assert_eq!(root.logs[2].index.0, 2);
+        assert_eq!(root.logs[3].index.0, 3);
+        assert_eq!(root.logs[4].index.0, 4);
+
+        let child = &root.calls[0];
+        assert_eq!(child.logs[0].index.0, 5);
+    }
+
+    #[tokio::test]
+    async fn test_interleaved_parent_child_logs() {
+        // Simulates:
+        //   function a() {
+        //       emit A0();        // position 0 (before any of A's 2 children)
+        //       new B().b();      // child 0, B has no logs
+        //       new C().c();      // child 1, C emits log at position 0 (no children in C)
+        //       emit A1();        // position 2 (after both children)
+        //   }
+        //
+        // Expected indices: A0=0, C0=1, A1=2
+
+        let frames = vec![
+            make_frame_with_positions(1, &[0, 2]), // A: A0 at pos 0, A1 at pos 2
+            make_frame_with_positions(2, &[]),     // B: no logs
+            make_frame_with_positions(2, &[0]),    // C: C0 at pos 0
+        ];
+
+        let root = build_call_tree(frames).unwrap();
+
+        // A0 (pos 0) → index 0
+        assert_eq!(root.logs[0].index.0, 0);
+        // A1 (pos 2) → index 2
+        assert_eq!(root.logs[1].index.0, 2);
+
+        // B has no logs
+        let child_b = &root.calls[0];
+        assert!(child_b.logs.is_empty());
+
+        // C0 (pos 0) → index 1
+        let child_c = &root.calls[1];
+        assert_eq!(child_c.logs[0].index.0, 1);
+    }
+
+    #[tokio::test]
+    async fn test_nested_calls_with_interleaved_logs() {
+        // Test the e_then_a() scenario with nested calls:
+        //
+        // Main.e_then_a():
+        //     emit A0        // position 0 (before calling E)
+        //     E.e()          // child call
+        //     emit A0        // position 1 (after E returns)
+        //
+        // E.e():
+        //     emit E0        // position 0 (before calling C)
+        //     C.c()          // child call
+        //     emit E0        // position 1 (after C returns)
+        //
+        // C.c():
+        //     emit C0        // position 0 (no children)
+        //
+        // Expected execution order:
+        //   Main A0 (pos 0) → index 0
+        //   E0 (pos 0)      → index 1
+        //   C0 (pos 0)      → index 2
+        //   E0 (pos 1)      → index 3
+        //   Main A0 (pos 1) → index 4
+
+        let frames = vec![
+            make_frame_with_positions(1, &[0, 1]), // Main: logs at pos 0 and 1
+            make_frame_with_positions(2, &[0, 1]), // E: logs at pos 0 and 1
+            make_frame_with_positions(3, &[0]),    // C: log at pos 0
+        ];
+
+        let main_frame = build_call_tree(frames).unwrap();
+
+        // Main frame has 2 logs
+        assert_eq!(main_frame.logs.len(), 2);
+        assert_eq!(main_frame.logs[0].index.0, 0); // First A0
+        assert_eq!(main_frame.logs[1].index.0, 4); // Second A0
+
+        // E frame (child of Main)
+        assert_eq!(main_frame.calls.len(), 1);
+        let e_frame = &main_frame.calls[0];
+        assert_eq!(e_frame.logs.len(), 2);
+        assert_eq!(e_frame.logs[0].index.0, 1); // First E0
+        assert_eq!(e_frame.logs[1].index.0, 3); // Second E0
+
+        // C frame (child of E)
+        assert_eq!(e_frame.calls.len(), 1);
+        let c_frame = &e_frame.calls[0];
+        assert_eq!(c_frame.logs.len(), 1);
+        assert_eq!(c_frame.logs[0].index.0, 2); // C0
+    }
+}

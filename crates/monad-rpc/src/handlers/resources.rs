@@ -1,0 +1,123 @@
+// Copyright (C) 2025 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use std::sync::Arc;
+
+use actix::{Actor, Context};
+use actix_web::{
+    dev::{ServiceRequest, ServiceResponse},
+    Error,
+};
+use monad_triedb_utils::triedb_env::TriedbEnv;
+use tokio::sync::Semaphore;
+use tracing_actix_web::RootSpanBuilder;
+
+use crate::{
+    comparator::RpcComparator,
+    data::{eth_call_handler::EthCallHandler, DataProvider},
+    event::EventServerClient,
+    middleware::Metrics,
+    txpool::EthTxPoolBridgeClient,
+};
+
+#[derive(Clone)]
+pub struct MonadRpcResources {
+    pub txpool_bridge_client: Option<EthTxPoolBridgeClient>,
+    pub eth_call_handler: Option<EthCallHandler>,
+    pub chain_id: u64,
+    pub data_provider: Option<DataProvider<TriedbEnv>>,
+    pub event_server_client: Option<EventServerClient>,
+    pub batch_request_limit: u16,
+    pub batch_concurrent_limit: u16,
+    pub max_response_size: u32,
+    pub allow_unprotected_txs: bool,
+    pub logs_max_block_range: u64,
+    pub eth_send_raw_transaction_sync_default_timeout_ms: u64,
+    pub eth_send_raw_transaction_sync_max_timeout_ms: u64,
+    pub dry_run_get_logs_index: bool,
+    pub use_eth_get_logs_index: bool,
+    pub max_finalized_block_cache_len: u64,
+    pub enable_eth_simulate_v1: bool,
+    pub metrics: Option<Metrics>,
+    pub rpc_comparator: Option<RpcComparator>,
+    pub feehistory_limiter: Arc<Semaphore>,
+}
+
+impl MonadRpcResources {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        txpool_bridge_client: Option<EthTxPoolBridgeClient>,
+        eth_call_handler: Option<EthCallHandler>,
+        chain_id: u64,
+        data_provider: Option<DataProvider<TriedbEnv>>,
+        event_server_client: Option<EventServerClient>,
+        batch_request_limit: u16,
+        batch_concurrent_limit: u16,
+        max_response_size: u32,
+        allow_unprotected_txs: bool,
+        logs_max_block_range: u64,
+        eth_send_raw_transaction_sync_default_timeout_ms: u64,
+        eth_send_raw_transaction_sync_max_timeout_ms: u64,
+        dry_run_get_logs_index: bool,
+        use_eth_get_logs_index: bool,
+        max_finalized_block_cache_len: u64,
+        enable_eth_simulate_v1: bool,
+        metrics: Option<Metrics>,
+        rpc_comparator: Option<RpcComparator>,
+        feehistory_max_concurrent_requests: u32,
+    ) -> Self {
+        Self {
+            txpool_bridge_client,
+            eth_call_handler,
+            chain_id,
+            data_provider,
+            event_server_client,
+            batch_request_limit,
+            batch_concurrent_limit,
+            max_response_size,
+            allow_unprotected_txs,
+            logs_max_block_range,
+            eth_send_raw_transaction_sync_default_timeout_ms,
+            eth_send_raw_transaction_sync_max_timeout_ms,
+            dry_run_get_logs_index,
+            use_eth_get_logs_index,
+            max_finalized_block_cache_len,
+            enable_eth_simulate_v1,
+            metrics,
+            rpc_comparator,
+            feehistory_limiter: Arc::new(Semaphore::new(
+                feehistory_max_concurrent_requests as usize,
+            )),
+        }
+    }
+}
+
+impl Actor for MonadRpcResources {
+    type Context = Context<Self>;
+}
+
+pub struct MonadJsonRootSpanBuilder;
+
+impl RootSpanBuilder for MonadJsonRootSpanBuilder {
+    fn on_request_start(request: &ServiceRequest) -> tracing::Span {
+        tracing_actix_web::root_span!(request, json_method = tracing::field::Empty)
+    }
+
+    fn on_request_end<B: actix_web::body::MessageBody>(
+        _span: tracing::Span,
+        _outcome: &Result<ServiceResponse<B>, Error>,
+    ) {
+    }
+}
