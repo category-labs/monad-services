@@ -25,6 +25,7 @@ alloy-rlp = { version = "0.3", features = ["arrayvec"] }
 alloy-rpc-types = { version = "2.0", default-features = false, features = ["eth"] }
 alloy-signer = "2.0"
 alloy-signer-local = "2.0"
+auto_impl = "1.3.0"
 aws-config = "1.8.13"
 aws-sdk-dynamodb = { version = "1.104.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
 aws-sdk-s3 = { version = "1.122.0", default-features = false, features = ["behavior-version-latest", "sigv4a", "rt-tokio", "default-https-client"] }
@@ -36,6 +37,7 @@ dashmap = "6.1.0"
 enum_dispatch = "0.3.13"
 eyre = "0.6.12"
 futures = "0.3"
+governor = "0.10.4"
 hex = "0.4"
 itertools = "0.13.0"
 libsqlite3-sys = "=0.37.0"
@@ -49,6 +51,7 @@ rayon = "1.7"
 regex = "1.10.2"
 reqwest = { version = "0.12.28", features = ["json"] }
 roaring = "=0.11.5"
+rocksdb = "=0.25.0"
 serde = "1.0"
 serde_json = "1.0"
 sqlx = { version = "0.9.0", default-features = false }

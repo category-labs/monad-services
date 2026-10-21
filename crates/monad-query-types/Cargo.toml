@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 alloy-rlp = { workspace = true, features = ["derive"] }
+auto_impl = { workspace = true }
 bytes     = { workspace = true }
 itertools = { workspace = true }
 num_enum  = { workspace = true }
