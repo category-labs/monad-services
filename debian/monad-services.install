@@ -1,0 +1,6 @@
+target/release/monad-archiver usr/lib/monad-services/
+target/release/monad-archive-checker usr/lib/monad-services/
+target/release/monad-indexer usr/lib/monad-services/
+target/release/monad-block-writer usr/lib/monad-services/
+debian/resources/etc/monad-services/env etc/monad-services/
+debian/resources/usr/lib/systemd/system/*.service usr/lib/systemd/system/
