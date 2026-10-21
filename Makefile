@@ -1,36 +1,19 @@
 SHELL := /bin/sh
 
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-ifeq ($(origin PACKAGE_VERSION),undefined)
-PACKAGE_VERSION := $(shell ./scripts/package-version)
-endif
+PACKAGE_VERSION ?= $(shell ./debian/scripts/dev-version)
 DEB_OUTPUT_DIR ?= dist
-BUILDER_IMAGE ?= monad-services-builder:local
+STRIP_SYMBOLS ?= 1
 
-.PHONY: build builder deb deb-host clean
+export CONTAINER_ENGINE PACKAGE_VERSION DEB_OUTPUT_DIR STRIP_SYMBOLS
 
-build:
-	./scripts/build-binaries
+.PHONY: deb deb-host clean
 
-# Needs the docker/builder toolchain on the host; `make deb` needs only a container engine.
+deb:
+	./debian/scripts/package-deb-containerized
+
 deb-host:
-	PACKAGE_VERSION=$(PACKAGE_VERSION) DEB_OUTPUT_DIR=$(DEB_OUTPUT_DIR) ./scripts/build-deb
-
-builder:
-	@test -n "$(CONTAINER_ENGINE)" || { echo "Install Docker or Podman, or set CONTAINER_ENGINE."; exit 1; }
-	$(CONTAINER_ENGINE) build -t $(BUILDER_IMAGE) -f docker/builder/Dockerfile .
-
-deb: builder
-	@mkdir -p $(DEB_OUTPUT_DIR); iidfile=$$(mktemp); \
-	trap 'rm -f "$$iidfile"' EXIT; \
-	$(CONTAINER_ENGINE) build \
-		--iidfile "$$iidfile" \
-		--build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
-		--build-arg PACKAGE_VERSION=$(PACKAGE_VERSION) \
-		-f docker/debian-package/Dockerfile . && \
-	container_id=$$($(CONTAINER_ENGINE) create "$$(cat "$$iidfile")" true) && \
-	trap '$(CONTAINER_ENGINE) rm -f $$container_id >/dev/null; rm -f "$$iidfile"' EXIT && \
-	$(CONTAINER_ENGINE) cp "$$container_id":/out/. $(DEB_OUTPUT_DIR)
+	./debian/scripts/package-deb
 
 clean:
-	rm -rf $(DEB_OUTPUT_DIR)
+	rm -rf '$(DEB_OUTPUT_DIR)'

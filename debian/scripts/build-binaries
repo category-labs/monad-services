@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+cd "$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+
+CC=gcc-15 \
+CXX=g++-15 \
+LIBCLANG_PATH=/usr/lib/llvm-19/lib \
+CMAKE_GENERATOR=Ninja \
+TRIEDB_TARGET=triedb_driver \
+ASMFLAGS=-march=haswell \
+CFLAGS=-march=haswell \
+CXXFLAGS='-march=haswell -DQUILL_ACTIVE_LOG_LEVEL=QUILL_LOG_LEVEL_CRITICAL' \
+cargo build --locked --release --package monad-archive --bins

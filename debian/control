@@ -1,0 +1,13 @@
+Source: monad-services
+Section: net
+Priority: optional
+Maintainer: Category Labs <engineering@category.xyz>
+Build-Depends: debhelper-compat (= 13), dpkg-dev, patchelf, pax-utils
+Standards-Version: 4.7.0
+
+Package: monad-services
+Architecture: amd64
+Depends: ca-certificates, libsecp256k1-6, ${shlibs:Depends}, ${misc:Depends}
+Description: Monad services
+ Archive, RPC, and Query binaries maintained by the monad-services
+ repository.
