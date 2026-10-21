@@ -3,18 +3,37 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.dependencies]
-monad-archive      = { path = "./crates/monad-archive" }
-monad-query-schema = { path = "./crates/monad-query-schema" }
-monad-query-store  = { path = "./crates/monad-query-store" }
-monad-query-types  = { path = "./crates/monad-query-types" }
-monad-query-write  = { path = "./crates/monad-query-write" }
+monad-archive         = { path = "./crates/monad-archive" }
+monad-query-schema    = { path = "./crates/monad-query-schema" }
+monad-query-store     = { path = "./crates/monad-query-store" }
+monad-query-types     = { path = "./crates/monad-query-types" }
+monad-query-write     = { path = "./crates/monad-query-write" }
+monad-rpc-docs        = { path = "./crates/monad-rpc/monad-rpc-docs" }
+monad-rpc-docs-derive = { path = "./crates/monad-rpc/monad-rpc-docs/monad-rpc-docs-derive" }
 
-monad-compress     = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
-monad-eth-testutil = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
-monad-eth-types    = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
-monad-triedb-utils = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
-monad-types        = { git = "https://github.com/category-labs/monad-bft", tag = "v0.16.0" }
+monad-chain-config     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-compress         = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-eth-testutil     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-eth-txpool-ipc   = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-eth-txpool-types = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-eth-types        = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-ethcall          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-event-ring       = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-exec-events      = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-metrics          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-node-config      = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-pprof            = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-tracing-timing   = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-triedb-utils     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-types            = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-version          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
 
+actix = "0.13"
+actix-http = { version = "3.11.1", default-features = false }
+actix-rt = "2.9.0"
+actix-test = { version = "0.1", default-features = false }
+actix-web = { version = "4.12.1", default-features = false, features = ["macros", "http2", "unicode", "ws"] }
+actix-ws = "0.3.0"
 alloy-consensus = "2.0"
 alloy-eips = "2.0"
 alloy-primitives = "1.5"
@@ -22,6 +41,9 @@ alloy-rlp = { version = "0.3", features = ["arrayvec"] }
 alloy-rpc-types = { version = "2.0", default-features = false, features = ["eth"] }
 alloy-signer = "2.0"
 alloy-signer-local = "2.0"
+arbitrary = "1.4.1"
+async-stream = "0.3.6"
+async-trait = "0.1"
 auto_impl = "1.3.0"
 aws-config = "1.8.13"
 aws-sdk-dynamodb = { version = "1.104.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "default-https-client"] }
@@ -30,36 +52,55 @@ base64 = "0.22.1"
 bytes = "1.5"
 chrono = "0.4.34"
 clap = "4.2"
+criterion = { version = "0.8", features = ["html_reports"] }
 dashmap = "6.1.0"
+dyn-clone = "1.0.20"
 enum_dispatch = "0.3.13"
 eyre = "0.6.12"
+flume = "0.11.0"
 futures = "0.3"
+futures-util = "0.3"
 governor = "0.10.4"
 hex = "0.4"
+inotify = "0.11"
+inventory = "0.3"
 itertools = "0.13.0"
 libsqlite3-sys = "=0.37.0"
 mongodb = { version = "3.7.0", default-features = false, features = ["compat-3-0-0", "dns-resolver", "openssl-tls"] }
 num_enum = "0.7.6"
-opentelemetry = "0.31"
-opentelemetry-otlp = "0.31"
-opentelemetry-semantic-conventions = "0.29"
-opentelemetry_sdk = "0.31"
+once_cell = "1.19.0"
+opentelemetry = "0.32"
+opentelemetry-otlp = "0.32"
+opentelemetry-semantic-conventions = "0.32"
+opentelemetry_sdk = "0.32"
+paste = "1.0.15"
+pin-project = "1.1.5"
+proc-macro2 = "1.0.86"
+proptest = "1.7"
+quote = "1.0.36"
+rand = "0.8"
 ratatui = "=0.30.2"
 rayon = "1.7"
 regex = "1.10.2"
 reqwest = { version = "0.12.28", features = ["json"] }
 roaring = "=0.11.5"
 rocksdb = "=0.25.0"
+schemars = "0.8.21"
 serde = "1.0"
+serde_cbor = "0.11.2"
 serde_json = "1.0"
 sqlx = { version = "0.9.0", default-features = false }
 strum = { version = "0.28.0", features = ["derive"] }
+syn = { version = "1.0.0", features = ["full"] }
 tempfile = "3.5"
+test-case = "3.0"
 thiserror = "1.0"
+tikv-jemallocator = "0.6"
 tokio = { version = "1.39", features = ["sync"] }
 tokio-retry = "0.3.0"
 toml = "0.9"
 tracing = "0.1"
+tracing-actix-web = "0.7"
 tracing-subscriber = "0.3"
 url = "2.5.0"
 validator = { version = "0.21.0", features = ["derive"] }
@@ -69,6 +110,9 @@ zstd = "0.13"
 opt-level = 1
 
 [profile.release]
-debug = true
-lto = "thin"
+codegen-units = 1
+debug = false
+incremental = false
+lto = true
+opt-level = 3
 panic = "abort"
