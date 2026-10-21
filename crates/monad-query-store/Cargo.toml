@@ -4,15 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["async", "sqlite"]
+default = ["rate-limit", "rocksdb", "s3", "sqlite"]
 
-async = ["dep:tokio", "dep:tracing"]
-sqlite = ["dep:libsqlite3-sys", "dep:sqlx", "async"]
+rate-limit = ["dep:governor"]
+rocksdb = ["dep:rocksdb"]
+s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:futures"]
+sqlite = ["dep:libsqlite3-sys", "dep:sqlx"]
 
 [dependencies]
 monad-query-types = { workspace = true }
 
+aws-config = { workspace = true, optional = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+bytes = { workspace = true }
+futures = { workspace = true, optional = true }
+governor = { workspace = true, optional = true }
 libsqlite3-sys = { workspace = true, optional = true }
+rocksdb = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, optional = true, features = ["runtime-tokio", "sqlite"] }
-tokio = { workspace = true, optional = true, features = ["fs", "macros", "rt", "sync", "time"] }
-tracing = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["fs", "rt", "sync"] }
+tracing = { workspace = true }
