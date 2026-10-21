@@ -19,9 +19,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use strum::{EnumCount, EnumIter};
 
 pub use self::{
-    block::StoredBlockQueryItem,
-    log::StoredLogQueryItem,
-    trace::{StoredTraceQueryItem, StoredTraceQueryItemWithAncestorStatus},
+    block::StoredBlockQueryItem, log::StoredLogQueryItem, trace::StoredTraceQueryItem,
     transaction::StoredTxQueryItem,
 };
 use crate::bitmap::BitmapFilterValue;

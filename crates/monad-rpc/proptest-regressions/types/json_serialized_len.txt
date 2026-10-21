@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2d26aa8e16ed2cd304ff276e2cc8ce1657eec4dfb6653a178d5d1ffe863ad51c # shrinks to value = "\\"
+cc 34b3f9f1fdd1fa9db0c5117b2aa9a5befd21627873bc07babfa66b51a3aa3394 # shrinks to value = 0
+cc 4ec2b08a33fd672af116b71506f980cbb2f64c3ab638b0be4c09c3c1eced5a38 # shrinks to value = JsonRpcError { code: 0, message: "\\", data: None }
+cc d59de978fd99be4a060de987ee4ca2d3fe47824745c3de31fcd120122d297441 # shrinks to value = String("\\")
+cc b54321d19998e356c53c808e5c16a7474b63a53322bebbb0f03ca9aaa88cfaa6 # shrinks to value = JsonRpcError { code: 0, message: "\0", data: None }
+cc 975b34082d0abef994c0969a1f8b10e1928cb03066d6c3364ad0655a23e0097d # shrinks to value = "\u{c}"
+cc 60387de15908f908844345c6b1d36d52ad97b797659e1f476148118d4719851e # shrinks to value = "\u{b}"
+cc 0270bb81d982ee2e6957e8812ef179b576c5746966a229fee29bf4ee6fa7d9d7 # shrinks to value = "\r"

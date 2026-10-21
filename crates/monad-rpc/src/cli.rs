@@ -271,6 +271,9 @@ pub struct Cli {
     #[arg(long)]
     pub mongo_failure_timeout_millis: Option<u64>,
 
+    #[arg(long)]
+    pub chain_data_config: Option<PathBuf>,
+
     /// Use mongo index to serve eth_getLogs
     #[arg(long)]
     pub use_eth_get_logs_index: bool,
@@ -278,13 +281,6 @@ pub struct Cli {
     /// Dry run using mongo index for eth_getLogs
     #[arg(long)]
     pub dry_run_get_logs_index: bool,
-
-    #[arg(
-        long,
-        help = "listen address for pprof server. pprof server won't be enabled if address is empty",
-        default_value = ""
-    )]
-    pub pprof: String,
 
     /// Sets the socket path for the monad execution event server
     #[arg(long)]

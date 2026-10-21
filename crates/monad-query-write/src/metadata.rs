@@ -12,9 +12,9 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 use std::time::Instant;
 
+use futures::future::LocalBoxFuture;
 use monad_query_schema::{
     family::{Family, FamilyMetadata},
     tables::metadata::{
@@ -33,101 +33,94 @@ use monad_query_types::{
     },
     PrimaryId, QueryResult,
 };
-use strum::{EnumCount, IntoEnumIterator};
+use strum::IntoEnumIterator;
 
-use crate::QueryWriterFlushBatch;
+use crate::FlushBatch;
 
-pub(super) async fn flush<M>(
-    block_table: &MetaTable<M, MetadataBlockHashSchema>,
-    family_table: &MetaTable<M, MetadataFamilySchema>,
-    family_block_index: &MetaTable<M, MetadataFamilyBlockIndexSchema>,
-    batch: &QueryWriterFlushBatch,
-) -> QueryResult<()>
+pub(crate) fn flush<'a, M>(
+    block_table: &'a MetaTable<M, MetadataBlockHashSchema>,
+    family_table: &'a MetaTable<M, MetadataFamilySchema>,
+    family_block_index: &'a MetaTable<M, MetadataFamilyBlockIndexSchema>,
+    batch: &'a FlushBatch,
+) -> LocalBoxFuture<'a, QueryResult<()>>
 where
     M: MetaStore,
 {
-    let mut blocks = Vec::with_capacity(batch.blocks.len());
+    Box::pin(async move {
+        let mut blocks = Vec::with_capacity(batch.blocks.len());
+        let mut families = Vec::with_capacity(batch.blocks.len() * 3);
+        let mut family_block_index_entries = Vec::with_capacity(batch.blocks.len() * 4);
 
-    let family_capacity = batch.blocks.len() * Family::COUNT;
-    let mut families = Vec::with_capacity(family_capacity);
-
-    let mut family_block_index_entries = Vec::with_capacity(family_capacity);
-
-    for assigned in &batch.blocks {
-        let block = &assigned.block;
-
-        blocks.push(MetaTablePut {
-            key: MetadataBlockHashKey {
-                block_height: block.block_number(),
-            },
-            value: MetadataBlockHashValue(block.block_hash()),
-        });
-
-        for family in Family::iter() {
-            let range = match family {
-                Family::BlockHeader => FamilyMetadata {
-                    first_primary_id: PrimaryId::new(block.block_number()),
-                    count: 1,
-                },
-                Family::Transaction => assigned.txs,
-                Family::Log => assigned.logs,
-                Family::Trace => assigned.traces,
-            };
-
-            families.push(MetaTablePut {
-                key: MetadataFamilyKey {
-                    family,
+        for assigned in &batch.blocks {
+            let block = &assigned.block;
+            blocks.push(MetaTablePut {
+                key: MetadataBlockHashKey {
                     block_height: block.block_number(),
                 },
-                value: range,
+                value: MetadataBlockHashValue(block.block_hash()),
             });
 
-            if range.count > 0 {
-                family_block_index_entries.push(MetaTablePut {
-                    key: MetadataFamilyBlockIndexKey {
-                        family,
-                        first_primary_id: range.first_primary_id.as_u64(),
+            for family in Family::iter() {
+                let range = match family {
+                    Family::BlockHeader => FamilyMetadata {
+                        first_primary_id: PrimaryId::new(block.block_number()),
+                        count: 1,
                     },
-                    value: MetadataFamilyBlockIndexValue {
+                    Family::Transaction => assigned.txs,
+                    Family::Log => assigned.logs,
+                    Family::Trace => assigned.traces,
+                };
+                families.push(MetaTablePut {
+                    key: MetadataFamilyKey {
+                        family,
                         block_height: block.block_number(),
                     },
+                    value: range,
                 });
+                if range.count > 0 {
+                    let first_primary_id = range.first_primary_id.as_u64();
+                    family_block_index_entries.push(MetaTablePut {
+                        key: MetadataFamilyBlockIndexKey {
+                            family,
+                            first_primary_id,
+                        },
+                        value: MetadataFamilyBlockIndexValue {
+                            block_height: block.block_number(),
+                        },
+                    });
+                }
             }
         }
-    }
 
-    let block_count = blocks.len();
-    let family_count = families.len();
-    let index_count = family_block_index_entries.len();
-
-    let started = Instant::now();
-    block_table.put_batch(blocks.into_boxed_slice()).await?;
-    tracing::info!(
-        table = "block_hash",
-        rows = block_count,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "metadata table flush complete"
-    );
-
-    let started = Instant::now();
-    family_table.put_batch(families.into_boxed_slice()).await?;
-    tracing::info!(
-        table = "family",
-        rows = family_count,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "metadata table flush complete"
-    );
-
-    let started = Instant::now();
-    family_block_index
-        .put_batch(family_block_index_entries.into_boxed_slice())
-        .await?;
-    tracing::info!(
-        table = "family_block_index",
-        rows = index_count,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "metadata table flush complete"
-    );
-
-    Ok(())
+        let block_count = blocks.len();
+        let family_count = families.len();
+        let index_count = family_block_index_entries.len();
+        let started = Instant::now();
+        block_table.put_batch(blocks.into_boxed_slice()).await?;
+        tracing::info!(
+            table = "block_hash",
+            rows = block_count,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "metadata table flush complete"
+        );
+        let started = Instant::now();
+        family_table.put_batch(families.into_boxed_slice()).await?;
+        tracing::info!(
+            table = "family",
+            rows = family_count,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "metadata table flush complete"
+        );
+        let started = Instant::now();
+        family_block_index
+            .put_batch(family_block_index_entries.into_boxed_slice())
+            .await?;
+        tracing::info!(
+            table = "family_block_index",
+            rows = index_count,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "metadata table flush complete"
+        );
+        Ok(())
+    })
 }

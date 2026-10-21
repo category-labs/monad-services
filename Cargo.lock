@@ -5085,7 +5085,9 @@ dependencies = [
 name = "monad-query-cli"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-eips",
+ "alloy-primitives",
  "alloy-rlp",
  "clap",
  "crossterm",
@@ -5107,10 +5109,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "monad-query-read"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eip2930",
+ "alloy-eip7702",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rlp",
+ "bytes",
+ "dashmap",
+ "futures",
+ "itertools 0.13.0",
+ "monad-query-schema",
+ "monad-query-store",
+ "monad-query-types",
+ "pin-project-lite",
+ "roaring",
+ "serde",
+ "serde_with",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "monad-query-schema"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-eip2930",
+ "alloy-eip7702",
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",
@@ -5180,12 +5210,15 @@ dependencies = [
  "actix-web",
  "actix-ws",
  "alloy-consensus",
+ "alloy-eip2930",
+ "alloy-eip7702",
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types",
  "alloy-signer",
  "alloy-signer-local",
+ "alloy-sol-types",
  "arbitrary",
  "async-stream",
  "async-trait",
@@ -5213,6 +5246,10 @@ dependencies = [
  "monad-metrics",
  "monad-node-config",
  "monad-pprof",
+ "monad-query-read",
+ "monad-query-schema",
+ "monad-query-store",
+ "monad-query-types",
  "monad-rpc-docs",
  "monad-tracing-timing",
  "monad-triedb-utils",
@@ -5230,6 +5267,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "serde_with",
  "strum 0.28.0",
  "tempfile",
  "test-case",

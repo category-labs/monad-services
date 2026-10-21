@@ -25,6 +25,12 @@ pub enum QueryError {
     Decode(&'static str),
     #[error("invalid request: {0}")]
     InvalidRequest(&'static str),
+    #[error("query range is inverted: from {from} is greater than to {to}")]
+    RangeInverted { from: u64, to: u64 },
+    #[error("resource not found")]
+    ResourceNotFound,
+    #[error("no indexed data")]
+    NoIndexedData,
     #[error("internal error: {0}")]
     Internal(&'static str),
     #[error("invalid block: {0}")]

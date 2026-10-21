@@ -21,7 +21,9 @@ use crate::{bitmap::BitmapFilterValue, family::BitmapIndexable};
 
 #[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 pub struct StoredLogQueryItem {
-    pub tx_index: u32,
+    pub block_timestamp: u64,
+    pub transaction_hash: B256,
+    pub transaction_index: u32,
     pub log_index: u32,
     pub address: Address,
     pub topics: Vec<B256>,

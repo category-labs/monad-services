@@ -19,8 +19,6 @@ use monad_query_types::{
     QueryResult,
 };
 
-#[cfg(feature = "rate-limit")]
-use self::rate_limit::RateLimitBlobStore;
 #[cfg(feature = "rocksdb")]
 use self::rocksdb::RocksDbBlobStore;
 #[cfg(feature = "s3")]
@@ -37,7 +35,7 @@ pub mod rocksdb;
 pub mod s3;
 
 #[derive(Clone)]
-pub enum RawBlobStoreBackend {
+pub enum BlobStoreBackend {
     Fs(FsBlobStore),
     InMemory(InMemoryBlobStore),
     #[cfg(feature = "rocksdb")]
@@ -46,58 +44,15 @@ pub enum RawBlobStoreBackend {
     S3(S3BlobStore),
 }
 
-macro_rules! with_raw_blob_backend {
-    ($backend:expr, $store:ident => $operation:expr) => {
-        match $backend {
-            RawBlobStoreBackend::Fs($store) => $operation,
-            RawBlobStoreBackend::InMemory($store) => $operation,
-            #[cfg(feature = "rocksdb")]
-            RawBlobStoreBackend::RocksDb($store) => $operation,
-            #[cfg(feature = "s3")]
-            RawBlobStoreBackend::S3($store) => $operation,
-        }
-    };
-}
-
-impl BlobStore for RawBlobStoreBackend {
-    async fn get(&self, table: BlobTableId, key: &[u8]) -> QueryResult<Option<Bytes>> {
-        with_raw_blob_backend!(self, backend => backend.get(table, key).await)
-    }
-
-    async fn get_range(
-        &self,
-        table: BlobTableId,
-        key: &[u8],
-        start: usize,
-        end_exclusive: usize,
-    ) -> QueryResult<Option<Bytes>> {
-        with_raw_blob_backend!(self, backend => {
-            backend.get_range(table, key, start, end_exclusive).await
-        })
-    }
-
-    async fn put(&self, table: BlobTableId, key: &[u8], value: Bytes) -> QueryResult<()> {
-        with_raw_blob_backend!(self, backend => backend.put(table, key, value).await)
-    }
-
-    async fn put_batch(&self, writes: Box<[BlobStoreBatchPut]>) -> QueryResult<()> {
-        with_raw_blob_backend!(self, backend => backend.put_batch(writes).await)
-    }
-}
-
-#[derive(Clone)]
-pub enum BlobStoreBackend {
-    Raw(RawBlobStoreBackend),
-    #[cfg(feature = "rate-limit")]
-    RateLimit(RateLimitBlobStore<Box<Self>>),
-}
-
 macro_rules! with_blob_backend {
     ($backend:expr, $store:ident => $operation:expr) => {
         match $backend {
-            BlobStoreBackend::Raw($store) => $operation,
-            #[cfg(feature = "rate-limit")]
-            BlobStoreBackend::RateLimit($store) => $operation,
+            BlobStoreBackend::Fs($store) => $operation,
+            BlobStoreBackend::InMemory($store) => $operation,
+            #[cfg(feature = "rocksdb")]
+            BlobStoreBackend::RocksDb($store) => $operation,
+            #[cfg(feature = "s3")]
+            BlobStoreBackend::S3($store) => $operation,
         }
     };
 }

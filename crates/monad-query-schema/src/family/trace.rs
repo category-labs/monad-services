@@ -13,9 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rlp::{Decodable, Encodable, RlpDecodable, RlpEncodable};
 use monad_query_types::{CallKind, QueryResult};
 
@@ -23,6 +21,9 @@ use crate::{bitmap::BitmapFilterValue, family::BitmapIndexable};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredTraceQueryItem {
+    pub transaction_hash: B256,
+    pub transaction_index: u32,
+    pub trace_address: Box<[u32]>,
     pub r#type: CallKind,
     pub from: Address,
     pub to: Option<Address>,
@@ -32,14 +33,14 @@ pub struct StoredTraceQueryItem {
     pub input: Bytes,
     pub output: Bytes,
     pub status: u8,
-    pub depth: u32,
-    pub tx_index: u32,
-    pub trace_address: Box<[u32]>,
-    pub tx_status: bool,
+    pub reverted: bool,
 }
 
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 struct StoredTraceQueryItemRlp {
+    transaction_hash: B256,
+    transaction_index: u32,
+    trace_address: Vec<u32>,
     type_bytes: u8,
     from: Address,
     to_bytes: Bytes,
@@ -49,10 +50,7 @@ struct StoredTraceQueryItemRlp {
     input: Bytes,
     output: Bytes,
     status: u8,
-    depth: u32,
-    tx_index: u32,
-    trace_address: Vec<u32>,
-    tx_status: bool,
+    reverted: bool,
 }
 
 impl Encodable for StoredTraceQueryItem {
@@ -64,6 +62,9 @@ impl Encodable for StoredTraceQueryItem {
             .unwrap_or_default();
 
         StoredTraceQueryItemRlp {
+            transaction_hash: self.transaction_hash,
+            transaction_index: self.transaction_index,
+            trace_address: self.trace_address.to_vec(),
             type_bytes: self.r#type.into(),
             from: self.from,
             to_bytes,
@@ -73,10 +74,7 @@ impl Encodable for StoredTraceQueryItem {
             input: self.input.clone(),
             output: self.output.clone(),
             status: self.status,
-            depth: self.depth,
-            tx_index: self.tx_index,
-            trace_address: self.trace_address.to_vec(),
-            tx_status: self.tx_status,
+            reverted: self.reverted,
         }
         .encode(out);
     }
@@ -85,6 +83,9 @@ impl Encodable for StoredTraceQueryItem {
 impl Decodable for StoredTraceQueryItem {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         let StoredTraceQueryItemRlp {
+            transaction_hash,
+            transaction_index,
+            trace_address,
             type_bytes,
             from,
             to_bytes,
@@ -94,10 +95,7 @@ impl Decodable for StoredTraceQueryItem {
             input,
             output,
             status,
-            depth,
-            tx_index,
-            trace_address,
-            tx_status,
+            reverted,
         } = StoredTraceQueryItemRlp::decode(buf)?;
 
         let r#type = CallKind::try_from(type_bytes)
@@ -109,6 +107,9 @@ impl Decodable for StoredTraceQueryItem {
             .map_err(|_| alloy_rlp::Error::Custom("invalid trace `to` byte length"))?;
 
         Ok(Self {
+            transaction_hash,
+            transaction_index,
+            trace_address: trace_address.into_boxed_slice(),
             r#type,
             from,
             to,
@@ -118,76 +119,46 @@ impl Decodable for StoredTraceQueryItem {
             input,
             output,
             status,
-            depth,
-            tx_index,
-            trace_address: trace_address.into_boxed_slice(),
-            tx_status,
+            reverted,
         })
     }
 }
 
-pub struct StoredTraceQueryItemWithAncestorStatus<'a> {
-    pub trace: &'a StoredTraceQueryItem,
-    pub ancestor_reverted: bool,
-}
-
-impl<'a> StoredTraceQueryItemWithAncestorStatus<'a> {
-    pub fn from_traces(traces: &'a [StoredTraceQueryItem]) -> Box<[Self]> {
-        // Per-tx depth stack: stack[d] = frame at depth d, or an ancestor of it, failed.
-        let mut stacks: HashMap<u32, Vec<bool>> = HashMap::new();
-
-        traces
-            .iter()
-            .map(|trace| {
-                let stack = stacks.entry(trace.tx_index).or_default();
-
-                let depth = trace.trace_address.len();
-
-                let ancestor_reverted = depth
-                    .checked_sub(1)
-                    .and_then(|d| stack.get(d).copied())
-                    .unwrap_or(false);
-
-                stack.truncate(depth);
-
-                if stack.len() < depth {
-                    stack.resize(depth, false);
-                }
-
-                stack.push(ancestor_reverted || trace.status != 0);
-
-                Self {
-                    trace,
-                    ancestor_reverted,
-                }
-            })
-            .collect()
-    }
-}
-
-impl BitmapIndexable for StoredTraceQueryItemWithAncestorStatus<'_> {
+impl BitmapIndexable for StoredTraceQueryItem {
     fn bitmap_filters(&self) -> QueryResult<Box<[BitmapFilterValue]>> {
-        let trace = self.trace;
+        let Self {
+            transaction_hash: _,
+            transaction_index: _,
+            trace_address,
+            r#type,
+            from,
+            to,
+            value: _,
+            gas: _,
+            gas_used: _,
+            input,
+            output: _,
+            status: _,
+            reverted,
+        } = self;
 
-        let mut filters = vec![BitmapFilterValue::From(trace.from)];
+        let mut filters = vec![BitmapFilterValue::From(*from)];
 
-        if let Some(to) = trace.to {
-            filters.push(BitmapFilterValue::To(to));
+        if let Some(to) = to {
+            filters.push(BitmapFilterValue::To(*to));
         }
 
-        if let Ok(selector) = <[u8; 4]>::try_from(&trace.input[..4.min(trace.input.len())]) {
+        if let Ok(selector) = <[u8; 4]>::try_from(&input[..4.min(input.len())]) {
             filters.push(BitmapFilterValue::Selector(selector));
         }
 
-        if trace.trace_address.is_empty() {
+        if trace_address.is_empty() {
             filters.push(BitmapFilterValue::TopLevel);
         }
 
-        if !self.ancestor_reverted
-            && trace.tx_status
-            && trace.status == 0
+        if !reverted
             && matches!(
-                trace.r#type,
+                r#type,
                 CallKind::Call | CallKind::Create | CallKind::Create2 | CallKind::SelfDestruct
             )
         {

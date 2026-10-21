@@ -28,8 +28,8 @@ pub struct StateIndexKey;
 pub struct StateIndex {
     pub indexed_start: Option<u64>,
     pub next_block_id: u64,
-    pub next_log_id: u64,
     pub next_tx_id: u64,
+    pub next_log_id: u64,
     pub next_trace_id: u64,
 }
 
@@ -47,8 +47,8 @@ impl MetaTableSchema for StateIndexSchema {
         columns: &[
             ColumnDef::new_number("indexed_start"),
             ColumnDef::new_number("next_block_id"),
-            ColumnDef::new_number("next_log_id"),
             ColumnDef::new_number("next_tx_id"),
+            ColumnDef::new_number("next_log_id"),
             ColumnDef::new_number("next_trace_id"),
         ],
     };
@@ -70,8 +70,8 @@ impl MetaTableSchema for StateIndexSchema {
         Box::new([
             Cell::new_number("indexed_start", value.indexed_start.unwrap_or(0)),
             Cell::new_number("next_block_id", value.next_block_id),
-            Cell::new_number("next_log_id", value.next_log_id),
             Cell::new_number("next_tx_id", value.next_tx_id),
+            Cell::new_number("next_log_id", value.next_log_id),
             Cell::new_number("next_trace_id", value.next_trace_id),
         ])
     }
@@ -84,11 +84,11 @@ impl MetaTableSchema for StateIndexSchema {
             column: column_next_block_id_name,
             value: column_next_block_id_value,
         }, Cell {
-            column: column_next_log_id_name,
-            value: column_next_log_id_value,
-        }, Cell {
             column: column_next_tx_id_name,
             value: column_next_tx_id_value,
+        }, Cell {
+            column: column_next_log_id_name,
+            value: column_next_log_id_value,
         }, Cell {
             column: column_next_trace_id_name,
             value: column_next_trace_id_value,
@@ -99,14 +99,14 @@ impl MetaTableSchema for StateIndexSchema {
         if [
             column_indexed_start_name.as_ref(),
             column_next_block_id_name.as_ref(),
-            column_next_log_id_name.as_ref(),
             column_next_tx_id_name.as_ref(),
+            column_next_log_id_name.as_ref(),
             column_next_trace_id_name.as_ref(),
         ] != [
             "indexed_start",
             "next_block_id",
-            "next_log_id",
             "next_tx_id",
+            "next_log_id",
             "next_trace_id",
         ] {
             return Err(QueryError::Decode("invalid state index columns"));
@@ -128,13 +128,13 @@ impl MetaTableSchema for StateIndexSchema {
                 column: column_next_block_id_name,
                 value: column_next_block_id_value,
             })?,
-            next_log_id: number(&Cell {
-                column: column_next_log_id_name,
-                value: column_next_log_id_value,
-            })?,
             next_tx_id: number(&Cell {
                 column: column_next_tx_id_name,
                 value: column_next_tx_id_value,
+            })?,
+            next_log_id: number(&Cell {
+                column: column_next_log_id_name,
+                value: column_next_log_id_value,
             })?,
             next_trace_id: number(&Cell {
                 column: column_next_trace_id_name,

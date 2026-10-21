@@ -29,6 +29,7 @@ use crate::{
     data::{eth_call_handler::EthCallHandler, DataProvider},
     event::EventServerClient,
     middleware::Metrics,
+    query_reader::ConfiguredQueryReader,
     txpool::EthTxPoolBridgeClient,
 };
 
@@ -38,6 +39,7 @@ pub struct MonadRpcResources {
     pub eth_call_handler: Option<EthCallHandler>,
     pub chain_id: u64,
     pub data_provider: Option<DataProvider<TriedbEnv>>,
+    pub chain_data_reader: Option<Arc<ConfiguredQueryReader>>,
     pub event_server_client: Option<EventServerClient>,
     pub batch_request_limit: u16,
     pub batch_concurrent_limit: u16,
@@ -62,6 +64,7 @@ impl MonadRpcResources {
         eth_call_handler: Option<EthCallHandler>,
         chain_id: u64,
         data_provider: Option<DataProvider<TriedbEnv>>,
+        chain_data_reader: Option<Arc<ConfiguredQueryReader>>,
         event_server_client: Option<EventServerClient>,
         batch_request_limit: u16,
         batch_concurrent_limit: u16,
@@ -83,6 +86,7 @@ impl MonadRpcResources {
             eth_call_handler,
             chain_id,
             data_provider,
+            chain_data_reader,
             event_server_client,
             batch_request_limit,
             batch_concurrent_limit,
