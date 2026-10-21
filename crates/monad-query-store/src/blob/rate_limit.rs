@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{future::Future, num::NonZeroU32, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc};
 
 use bytes::Bytes;
 use governor::{
@@ -28,20 +28,13 @@ use monad_query_types::{
 
 type DirectRateLimiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 
-#[derive(Clone)]
-pub struct RateLimitBlobStore<B>
-where
-    B: BlobStore,
-{
+pub struct RateLimitedBlobStore<B> {
     inner: B,
     read_limiter: Option<Arc<DirectRateLimiter>>,
     write_limiter: Option<Arc<DirectRateLimiter>>,
 }
 
-impl<B> RateLimitBlobStore<B>
-where
-    B: BlobStore,
-{
+impl<B> RateLimitedBlobStore<B> {
     pub fn new(
         inner: B,
         reads_per_second: Option<NonZeroU32>,
@@ -56,71 +49,37 @@ where
         }
     }
 
-    async fn wait_until_ready(limiter: Option<&Arc<DirectRateLimiter>>, permits: u32) {
+    async fn wait(limiter: Option<&Arc<DirectRateLimiter>>) {
         if let Some(limiter) = limiter {
-            if let Some(permits) = NonZeroU32::new(permits) {
-                let _ = limiter.until_n_ready(permits).await;
-            }
+            limiter.until_ready().await;
         }
     }
 }
 
-#[allow(refining_impl_trait)]
-impl<B> BlobStore for RateLimitBlobStore<B>
-where
-    B: BlobStore,
-{
-    fn get(
-        &self,
-        table: BlobTableId,
-        key: &[u8],
-    ) -> impl Future<Output = QueryResult<Option<Bytes>>> + Send + '_ {
-        let key = key.to_vec().into_boxed_slice();
-        async move {
-            Self::wait_until_ready(self.read_limiter.as_ref(), 1).await;
-            Box::pin(self.inner.get(table, &key)).await
-        }
+impl<B: BlobStore> BlobStore for RateLimitedBlobStore<B> {
+    async fn get(&self, table: BlobTableId, key: &[u8]) -> QueryResult<Option<Bytes>> {
+        Self::wait(self.read_limiter.as_ref()).await;
+        self.inner.get(table, key).await
     }
 
-    fn get_range(
+    async fn get_range(
         &self,
         table: BlobTableId,
         key: &[u8],
         start: usize,
         end_exclusive: usize,
-    ) -> impl Future<Output = QueryResult<Option<Bytes>>> + Send + '_ {
-        let key = key.to_vec().into_boxed_slice();
-        async move {
-            Self::wait_until_ready(self.read_limiter.as_ref(), 1).await;
-            Box::pin(self.inner.get_range(table, &key, start, end_exclusive)).await
-        }
+    ) -> QueryResult<Option<Bytes>> {
+        Self::wait(self.read_limiter.as_ref()).await;
+        self.inner.get_range(table, key, start, end_exclusive).await
     }
 
-    fn put(
-        &self,
-        table: BlobTableId,
-        key: &[u8],
-        value: Bytes,
-    ) -> impl Future<Output = QueryResult<()>> + Send + '_ {
-        let key = key.to_vec().into_boxed_slice();
-        async move {
-            Self::wait_until_ready(self.write_limiter.as_ref(), 1).await;
-            Box::pin(self.inner.put(table, &key, value)).await
-        }
+    async fn put(&self, table: BlobTableId, key: &[u8], value: Bytes) -> QueryResult<()> {
+        Self::wait(self.write_limiter.as_ref()).await;
+        self.inner.put(table, key, value).await
     }
 
-    #[allow(clippy::manual_async_fn)]
-    fn put_batch(
-        &self,
-        writes: Box<[BlobStoreBatchPut]>,
-    ) -> impl Future<Output = QueryResult<()>> + Send + '_ {
-        async move {
-            Self::wait_until_ready(
-                self.write_limiter.as_ref(),
-                writes.len().try_into().unwrap(),
-            )
-            .await;
-            Box::pin(self.inner.put_batch(writes)).await
-        }
+    async fn put_batch(&self, writes: Box<[BlobStoreBatchPut]>) -> QueryResult<()> {
+        Self::wait(self.write_limiter.as_ref()).await;
+        self.inner.put_batch(writes).await
     }
 }

@@ -15,7 +15,9 @@
 
 use std::path::PathBuf;
 
-use alloy_eips::eip2718::Encodable2718;
+use alloy_consensus::{Transaction, TxEnvelope};
+use alloy_eips::eip2718::Typed2718;
+use alloy_primitives::U256;
 use eyre::{ensure, Result, WrapErr};
 use futures::{StreamExt, TryStreamExt};
 use monad_archive::{metrics::Metrics, model::BlockDataReader, prelude::LatestKind};
@@ -24,7 +26,7 @@ use monad_query_schema::family::{
 };
 use monad_query_store::{blob::BlobStoreBackend, meta::MetaStoreBackend};
 use monad_query_types::{store::blob::table::CodecBlobTable, QueryError, QueryResult};
-use monad_query_write::{QueryWriter, QueryWriterBlock, QueryWriterTx};
+use monad_query_write::{EvmBlock, EvmTx, QueryWriter};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info};
 
@@ -67,12 +69,22 @@ async fn run_async(
         .await
         .wrap_err("build block data reader")?;
 
-    if writer.next_block_number()? == 0 {
+    if let Some(indexed_start) = writer.indexed_start() {
+        if let Some(start_block) = start_block {
+            ensure!(
+                start_block == indexed_start,
+                "configured start block {start_block} does not match indexed start block {indexed_start}"
+            );
+        }
+    } else {
         writer
             .start_at(start_block.unwrap_or(0))
             .map_err(|error| eyre::eyre!("set index start block: {error}"))?;
     }
-    let mut next_block = writer.next_block_number()?;
+
+    let mut next_block = writer
+        .next_block_number()
+        .map_err(|error| eyre::eyre!("read next index block: {error}"))?;
 
     loop {
         let Some(latest_block) = reader
@@ -176,12 +188,15 @@ async fn index_range(
 async fn read_finalized_block(
     reader: &impl BlockDataReader,
     block_number: u64,
-) -> Result<QueryWriterBlock> {
+) -> Result<EvmBlock> {
     debug!(block_number, "reading block");
     let data = reader
         .get_block_data_with_offsets(block_number)
         .await
         .wrap_err_with(|| format!("read block {block_number} data"))?;
+    let mut block_for_size = data.block.clone().map_transactions(|tx| tx.tx);
+    block_for_size.body.withdrawals = None;
+    let block_size = alloy_rlp::encode(&block_for_size).len() as u64;
     let traces = monad_archive::model::block_data_archive::decode_traces(&data.traces)
         .wrap_err("decode block traces")?;
 
@@ -194,6 +209,8 @@ async fn read_finalized_block(
         "block transaction and trace counts differ"
     );
 
+    let mut previous_cumulative_gas_used = 0u64;
+    let mut next_log_index = 0u32;
     let txs = data
         .block
         .body
@@ -202,31 +219,41 @@ async fn read_finalized_block(
         .zip(data.receipts)
         .zip(traces)
         .enumerate()
-        .map(|(tx_index, ((tx, receipt), trace_groups))| {
-            let tx_index = u32::try_from(tx_index)
+        .map(|(tranasction_index, ((tx, receipt), trace_groups))| {
+            let transaction_index = u32::try_from(tranasction_index)
                 .map_err(|_| eyre::eyre!("transaction index exceeds u32"))?;
-            let mut signed_tx_bytes = Vec::new();
-            tx.tx.encode_2718(&mut signed_tx_bytes);
+            let cumulative_gas_used = receipt.receipt.cumulative_gas_used();
+            let gas_used = cumulative_gas_used
+                .checked_sub(previous_cumulative_gas_used)
+                .ok_or_else(|| eyre::eyre!("receipt cumulative gas used decreases"))?;
+            previous_cumulative_gas_used = cumulative_gas_used;
+            let signature = tx.tx.signature();
             let frames = trace_groups.into_iter().flatten().collect::<Vec<_>>();
             let depths = frames
                 .iter()
                 .map(|frame| frame.depth.to::<u32>())
                 .collect::<Vec<_>>();
             let trace_addresses = compute_trace_addresses(&depths)?;
+            let statuses = frames
+                .iter()
+                .map(|frame| frame.status.to::<u8>())
+                .collect::<Vec<_>>();
+            let reverted =
+                compute_trace_reverted(&statuses, receipt.receipt.status(), &trace_addresses);
 
             let traces = frames
                 .into_iter()
                 .zip(trace_addresses)
-                .map(|(frame, trace_address)| {
+                .zip(reverted)
+                .map(|((frame, trace_address), reverted)| {
                     let gas = u64::try_from(frame.gas)
                         .map_err(|_| eyre::eyre!("trace gas exceeds u64"))?;
                     let gas_used = u64::try_from(frame.gas_used)
                         .map_err(|_| eyre::eyre!("trace gas used exceeds u64"))?;
-                    let status = u8::try_from(frame.status)
-                        .map_err(|_| eyre::eyre!("trace status exceeds u8"))?;
-                    let depth = u32::try_from(frame.depth)
-                        .map_err(|_| eyre::eyre!("trace depth exceeds u32"))?;
                     Ok(StoredTraceQueryItem {
+                        transaction_hash: *tx.tx.tx_hash(),
+                        transaction_index,
+                        trace_address: trace_address.into_boxed_slice(),
                         r#type: match frame.typ {
                             monad_archive::model::block_data_archive::CallKind::Call => {
                                 monad_query_types::CallKind::Call
@@ -257,32 +284,76 @@ async fn read_finalized_block(
                         gas_used,
                         input: frame.input,
                         output: frame.output,
-                        status,
-                        depth,
-                        tx_index,
-                        trace_address: trace_address.into_boxed_slice(),
-                        tx_status: receipt.receipt.status(),
+                        status: frame.status.to::<u8>(),
+                        reverted,
                     })
                 })
                 .collect::<Result<Vec<_>>>()?
                 .into_boxed_slice();
 
-            Ok(QueryWriterTx {
+            Ok(EvmTx {
                 envelope: StoredTxQueryItem {
-                    tx_hash: *tx.tx.tx_hash(),
+                    block_timestamp: data.block.header.timestamp,
+                    transaction_hash: *tx.tx.tx_hash(),
                     sender: tx.sender,
-                    signed_tx_bytes: signed_tx_bytes.into(),
+                    nonce: tx.tx.nonce(),
+                    tx_type: tx.tx.tx_type().ty() as u8,
+                    input: tx.tx.input().clone(),
+                    value: tx.tx.value(),
+                    gas: tx.tx.gas_limit(),
+                    r: signature.r(),
+                    s: signature.s(),
+                    y_parity: signature.v(),
+                    logs_bloom: *receipt.receipt.logs_bloom(),
+                    status: receipt.receipt.status(),
+                    gas_used,
+                    cumulative_gas_used,
+                    effective_gas_price: U256::from(
+                        tx.tx
+                            .effective_gas_price(data.block.header.base_fee_per_gas),
+                    ),
+                    chain_id: tx.tx.chain_id(),
+                    to: tx.tx.to(),
+                    gas_price: Some(U256::from(
+                        tx.tx
+                            .effective_gas_price(data.block.header.base_fee_per_gas),
+                    )),
+                    max_fee_per_gas: Some(U256::from(tx.tx.max_fee_per_gas())),
+                    max_priority_fee_per_gas: match &tx.tx {
+                        TxEnvelope::Eip1559(tx) => Some(
+                            tx.max_priority_fee_per_gas()
+                                .map(U256::from)
+                                .unwrap_or_default(),
+                        ),
+                        TxEnvelope::Eip7702(tx) => Some(
+                            tx.max_priority_fee_per_gas()
+                                .map(U256::from)
+                                .unwrap_or_default(),
+                        ),
+                        TxEnvelope::Legacy(_) | TxEnvelope::Eip2930(_) | TxEnvelope::Eip4844(_) => {
+                            None
+                        }
+                    },
+                    max_fee_per_blob_gas: tx.tx.max_fee_per_blob_gas().map(U256::from),
+                    access_list: tx.tx.access_list().cloned(),
+                    authorization_list: tx.tx.authorization_list().map(ToOwned::to_owned),
+                    blob_versioned_hashes: tx.tx.blob_versioned_hashes().map(ToOwned::to_owned),
+                    contract_address: matches!(tx.tx.kind(), alloy_primitives::TxKind::Create)
+                        .then(|| tx.sender.create(tx.tx.nonce())),
                 },
                 logs: receipt
                     .receipt
                     .logs()
                     .iter()
-                    .enumerate()
-                    .map(|(log_index, log)| {
-                        let log_index = u32::try_from(log_index)
-                            .map_err(|_| eyre::eyre!("log index exceeds u32"))?;
+                    .map(|log| {
+                        let log_index = next_log_index;
+                        next_log_index = next_log_index
+                            .checked_add(1)
+                            .ok_or_else(|| eyre::eyre!("log index exceeds u32"))?;
                         Ok(StoredLogQueryItem {
-                            tx_index,
+                            block_timestamp: data.block.header.timestamp,
+                            transaction_hash: *tx.tx.tx_hash(),
+                            transaction_index,
                             log_index,
                             address: log.address,
                             topics: log.data.topics().to_vec(),
@@ -297,9 +368,11 @@ async fn read_finalized_block(
         .collect::<Result<Vec<_>>>()?
         .into_boxed_slice();
 
-    let block = QueryWriterBlock {
+    let block = EvmBlock {
         header: StoredBlockQueryItem {
             header: data.block.header,
+            size: block_size,
+            total_difficulty: U256::ZERO,
         },
         txs,
     };
@@ -309,6 +382,32 @@ async fn read_finalized_block(
         "decoded block"
     );
     Ok(block)
+}
+
+fn compute_trace_reverted(
+    statuses: &[u8],
+    transaction_status: bool,
+    trace_addresses: &[Vec<u32>],
+) -> Vec<bool> {
+    let mut failed_ancestors = Vec::new();
+
+    statuses
+        .iter()
+        .zip(trace_addresses)
+        .map(|(&status, trace_address)| {
+            let depth = trace_address.len();
+            let ancestor_reverted = depth
+                .checked_sub(1)
+                .and_then(|index| failed_ancestors.get(index).copied())
+                .unwrap_or(false);
+
+            failed_ancestors.truncate(depth);
+            failed_ancestors.resize(depth + 1, false);
+            failed_ancestors[depth] = ancestor_reverted || status != 0;
+
+            ancestor_reverted || status != 0 || !transaction_status
+        })
+        .collect()
 }
 
 fn compute_trace_addresses(depths: &[u32]) -> QueryResult<Vec<Vec<u32>>> {

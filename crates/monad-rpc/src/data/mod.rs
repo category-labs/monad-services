@@ -60,6 +60,7 @@ use crate::{
 
 pub mod buffer;
 pub mod eth_call_handler;
+pub mod query;
 mod source;
 
 #[derive(Clone)]

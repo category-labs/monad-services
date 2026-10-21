@@ -30,7 +30,7 @@ use monad_query_schema::{
     bitmap::{BitmapFilterKey, BitmapFilterValue},
     family::{
         BitmapIndexable, Family, FamilyMetadata, StoredBlockQueryItem, StoredLogQueryItem,
-        StoredTraceQueryItem, StoredTraceQueryItemWithAncestorStatus, StoredTxQueryItem,
+        StoredTraceQueryItem, StoredTxQueryItem,
     },
     tables::{
         bitmap::{
@@ -454,10 +454,7 @@ async fn validate_bitmap_membership(
             for (_, item) in items {
                 traces.push(StoredTraceQueryItem::decode(&mut &item.bytes[..])?);
             }
-            for (id, trace) in ids
-                .into_iter()
-                .zip(StoredTraceQueryItemWithAncestorStatus::from_traces(&traces).iter())
-            {
+            for (id, trace) in ids.into_iter().zip(traces.iter()) {
                 expected.push((id, trace.bitmap_filters()?));
             }
         }

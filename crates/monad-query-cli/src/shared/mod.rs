@@ -20,7 +20,7 @@ use monad_query_schema::tables::QueryTables;
 use monad_query_store::{
     blob::{
         fs::FsBlobStore, in_memory::InMemoryBlobStore, rocksdb::RocksDbBlobStore, s3::S3BlobStore,
-        BlobStoreBackend, RawBlobStoreBackend,
+        BlobStoreBackend,
     },
     meta::{
         in_memory::InMemoryMetaStore,
@@ -70,28 +70,24 @@ pub(crate) async fn open_tables(
 
     let blob = match blob {
         MonadQueryServiceBlobStorageConfig::InMemory => {
-            BlobStoreBackend::Raw(RawBlobStoreBackend::InMemory(InMemoryBlobStore::default()))
+            BlobStoreBackend::InMemory(InMemoryBlobStore::default())
         }
         MonadQueryServiceBlobStorageConfig::Fs { root } => {
-            BlobStoreBackend::Raw(RawBlobStoreBackend::Fs(FsBlobStore::new(root)))
+            BlobStoreBackend::Fs(FsBlobStore::new(root))
         }
-        MonadQueryServiceBlobStorageConfig::RocksDb { root } => {
-            BlobStoreBackend::Raw(RawBlobStoreBackend::RocksDb(
-                if read_only {
-                    RocksDbBlobStore::new_read_only(root)
-                } else {
-                    RocksDbBlobStore::new(root)
-                }
-                .map_err(|error| eyre::eyre!("open RocksDB blob store: {error}"))?,
-            ))
-        }
-        MonadQueryServiceBlobStorageConfig::S3 { config } => {
-            BlobStoreBackend::Raw(RawBlobStoreBackend::S3(
-                S3BlobStore::new(config)
-                    .await
-                    .map_err(|error| eyre::eyre!("open S3 blob store: {error}"))?,
-            ))
-        }
+        MonadQueryServiceBlobStorageConfig::RocksDb { root } => BlobStoreBackend::RocksDb(
+            if read_only {
+                RocksDbBlobStore::new_read_only(root)
+            } else {
+                RocksDbBlobStore::new(root)
+            }
+            .map_err(|error| eyre::eyre!("open RocksDB blob store: {error}"))?,
+        ),
+        MonadQueryServiceBlobStorageConfig::S3 { config } => BlobStoreBackend::S3(
+            S3BlobStore::new(config)
+                .await
+                .map_err(|error| eyre::eyre!("open S3 blob store: {error}"))?,
+        ),
     };
 
     Ok(QueryTables::new(

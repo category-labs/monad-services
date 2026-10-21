@@ -14,27 +14,17 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use alloy_consensus::Header;
-use alloy_rlp::{BufMut, Decodable, Encodable};
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use monad_query_types::QueryResult;
 
 use super::BitmapIndexable;
 use crate::bitmap::BitmapFilterValue;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable, RlpDecodable)]
 pub struct StoredBlockQueryItem {
     pub header: Header,
-}
-
-impl Encodable for StoredBlockQueryItem {
-    fn encode(&self, out: &mut dyn BufMut) {
-        self.header.encode(out);
-    }
-}
-
-impl Decodable for StoredBlockQueryItem {
-    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
-        Header::decode(buf).map(|header| Self { header })
-    }
+    pub size: u64,
+    pub total_difficulty: alloy_primitives::U256,
 }
 
 impl BitmapIndexable for StoredBlockQueryItem {

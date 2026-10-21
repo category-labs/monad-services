@@ -42,7 +42,6 @@ pub struct BlobStoreBatchPut {
     pub value: Bytes,
 }
 
-#[auto_impl::auto_impl(Box)]
 #[allow(async_fn_in_trait)]
 pub trait BlobStore: Send + Sync + 'static {
     fn get(
@@ -59,8 +58,8 @@ pub trait BlobStore: Send + Sync + 'static {
         end_exclusive: usize,
     ) -> impl Future<Output = QueryResult<Option<Bytes>>> + Send {
         async move {
-            if start >= end_exclusive {
-                return Err(QueryError::Decode("invalid blob range"));
+            if start > end_exclusive {
+                return Err(QueryError::Decode("invalid blob range bounds"));
             }
 
             let Some(blob) = self.get(table, key).await? else {

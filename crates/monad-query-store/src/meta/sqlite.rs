@@ -13,24 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{
-    collections::HashMap,
-    str::FromStr,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use monad_query_types::{
     store::meta::{
         column::{Cell, CellType, CellValue, ColumnDef, RowCells},
         table::{MetaTableDef, MetaTableId},
-        MetaKey, MetaRow, MetaScanOrder, MetaStore,
+        MetaKey, MetaRow, MetaScanOrder, MetaStore, MetaWrite,
     },
     QueryError, QueryResult,
 };
 use sqlx::{
     sqlite::{SqliteArguments, SqliteConnectOptions, SqlitePoolOptions},
-    Column as SqlxColumn, Row, Sqlite, SqlitePool, TypeInfo,
+    Column as SqlxColumn, Row, Sqlite, SqlitePool,
 };
 use tokio::sync::OnceCell;
 
@@ -52,9 +47,7 @@ impl SqliteMetaStoreConfig {
 #[derive(Clone)]
 pub struct SqliteMetaStore {
     pool: SqlitePool,
-
     max_variable_number: Arc<OnceCell<usize>>,
-    definitions: Arc<RwLock<HashMap<MetaTableId, MetaTableDef>>>,
 }
 
 impl SqliteMetaStore {
@@ -76,7 +69,6 @@ impl SqliteMetaStore {
         Self {
             pool,
             max_variable_number: Arc::new(OnceCell::new()),
-            definitions: Arc::default(),
         }
     }
 
@@ -84,12 +76,10 @@ impl SqliteMetaStore {
         self.max_variable_number
             .get_or_try_init(|| async {
                 let mut connection = self.pool.acquire().await.map_err(error("acquire"))?;
-
                 let mut handle = connection
                     .lock_handle()
                     .await
                     .map_err(error("lock handle"))?;
-
                 // SAFETY: SQLx guarantees the worker is stopped while the handle is locked.
                 let limit = unsafe {
                     libsqlite3_sys::sqlite3_limit(
@@ -98,7 +88,6 @@ impl SqliteMetaStore {
                         -1,
                     )
                 };
-
                 usize::try_from(limit).map_err(|_| {
                     QueryError::Backend("sqlite reported an invalid variable limit".into())
                 })
@@ -107,156 +96,8 @@ impl SqliteMetaStore {
             .copied()
     }
 
-    fn decode_row(
-        &self,
-        table: MetaTableId,
-        row: sqlx::sqlite::SqliteRow,
-        key: MetaKey,
-    ) -> QueryResult<MetaRow> {
-        let definition = self
-            .definitions
-            .read()
-            .expect("metadata definitions lock is not poisoned")
-            .get(&table)
-            .copied();
-        let columns = row
-            .columns()
-            .iter()
-            .filter(|column| {
-                !Self::key_columns(&key).any(|key_column| key_column.column == column.name())
-            })
-            .map(|column| {
-                let name = column.name();
-                let is_bool = definition
-                    .and_then(|definition| {
-                        definition.columns.iter().find(|column| column.name == name)
-                    })
-                    .map_or_else(
-                        || column.type_info().name() == "BOOLEAN",
-                        |column| column.kind == CellType::Bool,
-                    );
-                let value = if is_bool {
-                    row.try_get::<i64, _>(name)
-                        .map(|value| CellValue::Bool(value != 0))
-                } else {
-                    row.try_get::<i64, _>(name)
-                        .map(|value| CellValue::Number(value.to_string()))
-                        .or_else(|_| {
-                            row.try_get::<Vec<u8>, _>(name)
-                                .map(|value| CellValue::Bytes(value.into_boxed_slice()))
-                        })
-                }
-                .map_err(|_| Self::unsupported_column(name))?;
-
-                Ok(Cell::new(name.to_owned(), value))
-            })
-            .collect::<QueryResult<Box<[_]>>>()?;
-
-        Ok(MetaRow { key, columns })
-    }
-
-    fn definition_columns(definition: MetaTableDef) -> impl Iterator<Item = &'static ColumnDef> {
-        definition
-            .partition_key
-            .iter()
-            .chain(definition.clustering_key)
-            .chain(definition.columns)
-    }
-
-    fn key_columns(key: &MetaKey) -> impl Iterator<Item = &Cell> + Clone {
-        key.partition.iter().chain(key.clustering.iter())
-    }
-
-    fn row_columns(row: &MetaRow) -> impl Iterator<Item = &Cell> + Clone {
-        Self::key_columns(&row.key).chain(row.columns.iter())
-    }
-
-    fn equality_predicate<'a>(columns: impl Iterator<Item = &'a Cell>) -> String {
-        columns
-            .map(|column| format!("{} = ?", quote(&column.column)))
-            .collect::<Vec<_>>()
-            .join(" AND ")
-    }
-
-    fn placeholders(count: usize) -> String {
-        std::iter::repeat_n("?", count)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    fn insert_sql<'a>(
-        table: MetaTableId,
-        columns: impl Iterator<Item = &'a Cell>,
-        row_count: usize,
-    ) -> String {
-        let names = columns
-            .map(|column| quote(&column.column))
-            .collect::<Vec<_>>();
-        let row_placeholders = format!("({})", Self::placeholders(names.len()));
-        let names = names.join(", ");
-        let values = std::iter::repeat_n(row_placeholders.as_str(), row_count)
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        format!(
-            "INSERT OR REPLACE INTO {} ({names}) VALUES {values}",
-            quote(table.as_str())
-        )
-    }
-
-    fn bind_values<'a, 'q>(
-        query: sqlx::query::Query<'q, Sqlite, SqliteArguments>,
-        values: impl IntoIterator<Item = &'a CellValue>,
-    ) -> QueryResult<sqlx::query::Query<'q, Sqlite, SqliteArguments>> {
-        values.into_iter().try_fold(query, |query, value| {
-            Ok(match value {
-                CellValue::Bool(value) => query.bind(i64::from(*value)),
-                CellValue::Number(value) => query.bind(value.parse::<i64>().map_err(|_| {
-                    QueryError::InvalidRequest("SQLite numbers must be signed 64-bit integers")
-                })?),
-                CellValue::Bytes(value) => query.bind(value.to_vec()),
-            })
-        })
-    }
-
-    fn row_key(
-        row: &sqlx::sqlite::SqliteRow,
-        partition: RowCells,
-        clustering: &Cell,
-    ) -> QueryResult<MetaKey> {
-        let name = clustering.column.as_ref();
-        let value = match &clustering.value {
-            CellValue::Bool(_) => row
-                .try_get::<i64, _>(name)
-                .map(|value| CellValue::Bool(value != 0)),
-            CellValue::Number(_) => row
-                .try_get::<i64, _>(name)
-                .map(|value| CellValue::Number(value.to_string())),
-            CellValue::Bytes(_) => row
-                .try_get::<Vec<u8>, _>(name)
-                .map(|value| CellValue::Bytes(value.into_boxed_slice())),
-        }
-        .map_err(|_| Self::unsupported_column(name))?;
-
-        Ok(MetaKey {
-            partition,
-            clustering: Box::new([Cell {
-                column: clustering.column.clone(),
-                value,
-            }]),
-        })
-    }
-
-    fn sql_type(kind: CellType) -> &'static str {
-        match kind {
-            CellType::Bool => "BOOLEAN",
-            CellType::Number => "INTEGER",
-            CellType::Bytes => "BLOB",
-        }
-    }
-
-    fn unsupported_column(name: &str) -> QueryError {
-        QueryError::Backend(format!("unsupported sqlite column `{name}`"))
+    fn table_name(table: MetaTableId) -> String {
+        table.as_str().replace('"', "\"\"")
     }
 }
 
@@ -269,43 +110,42 @@ impl MetaStore for SqliteMetaStore {
         }
 
         let mut columns = Vec::new();
-
-        for column in Self::definition_columns(definition) {
+        for column in definition
+            .partition_key
+            .iter()
+            .chain(definition.clustering_key)
+            .chain(definition.columns)
+        {
             if columns.contains(&column.name) {
                 return Err(QueryError::InvalidRequest(
                     "metadata schema has duplicate columns",
                 ));
             }
-
             columns.push(column.name);
         }
 
-        let definitions = Self::definition_columns(definition)
-            .map(|column| {
-                format!(
-                    "{} {} NOT NULL",
-                    quote(column.name),
-                    Self::sql_type(column.kind)
-                )
-            })
+        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (", Self::table_name(table));
+        let definitions = definition
+            .partition_key
+            .iter()
+            .chain(definition.clustering_key)
+            .chain(definition.columns)
+            .map(|column| format!("{} {} NOT NULL", quote(column.name), sql_type(column.kind)))
             .collect::<Vec<_>>();
-        let key_count = definition.partition_key.len() + definition.clustering_key.len();
-
-        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (", quote(table.as_str()));
-
         sql.push_str(&definitions.join(", "));
         sql.push_str(", PRIMARY KEY (");
         sql.push_str(
-            &Self::definition_columns(definition)
-                .take(key_count)
+            &definition
+                .partition_key
+                .iter()
+                .chain(definition.clustering_key)
                 .map(|column| quote(column.name))
                 .collect::<Vec<_>>()
                 .join(", "),
         );
         sql.push(')');
         sql.push(')');
-
-        if key_count > 1 {
+        if definition.partition_key.len() + definition.clustering_key.len() > 1 {
             sql.push_str(" WITHOUT ROWID");
         }
 
@@ -317,45 +157,47 @@ impl MetaStore for SqliteMetaStore {
         let actual = sqlx::query(
             "SELECT name, type, \"notnull\" AS not_null, pk FROM pragma_table_info(?) ORDER BY cid",
         )
-        .bind(table.as_str())
+        .bind(Self::table_name(table))
         .fetch_all(&self.pool)
         .await
         .map_err(error("read table schema"))?;
-
-        if actual.len() != key_count + definition.columns.len()
-            || actual
-                .iter()
-                .zip(Self::definition_columns(definition))
-                .enumerate()
-                .any(|(index, (row, column))| {
-                    let name = row.try_get::<String, _>("name").ok();
-                    let kind = row.try_get::<String, _>("type").ok();
-                    let not_null = row.try_get::<i64, _>("not_null").ok();
-                    let primary_key = row.try_get::<i64, _>("pk").ok();
-                    let expected_primary_key = if index < key_count {
+        let expected = definition
+            .partition_key
+            .iter()
+            .chain(definition.clustering_key)
+            .chain(definition.columns)
+            .enumerate()
+            .map(|(index, column)| {
+                (
+                    column.name,
+                    sql_type(column.kind),
+                    1_i64,
+                    if index < definition.partition_key.len() + definition.clustering_key.len() {
                         (index + 1) as i64
                     } else {
                         0
-                    };
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
 
-                    name.as_deref() != Some(column.name)
-                        || !(kind.as_deref() == Some(Self::sql_type(column.kind))
-                            || (column.kind == CellType::Bool
-                                && kind.as_deref() == Some("INTEGER")))
-                        || not_null != Some(1)
-                        || primary_key != Some(expected_primary_key)
-                })
+        if actual.len() != expected.len()
+            || actual.iter().zip(expected).any(|(row, expected)| {
+                let name = row.try_get::<String, _>("name").ok();
+                let kind = row.try_get::<String, _>("type").ok();
+                let not_null = row.try_get::<i64, _>("not_null").ok();
+                let primary_key = row.try_get::<i64, _>("pk").ok();
+                name.as_deref() != Some(expected.0)
+                    || kind.as_deref() != Some(expected.1)
+                    || not_null != Some(expected.2)
+                    || primary_key != Some(expected.3)
+            })
         {
             return Err(QueryError::Backend(format!(
                 "sqlite schema mismatch for table `{}`",
                 table.as_str()
             )));
         }
-
-        self.definitions
-            .write()
-            .expect("metadata definitions lock is not poisoned")
-            .insert(table, definition);
 
         Ok(())
     }
@@ -366,30 +208,25 @@ impl MetaStore for SqliteMetaStore {
             table = table.as_str(),
             "metadata get"
         );
-
-        if key.partition.is_empty() {
-            return Err(QueryError::InvalidRequest("missing partition key"));
-        }
-
-        let where_clause = Self::key_columns(&key);
-
+        let where_clause = key_columns(&key);
         let sql = format!(
             "SELECT * FROM {} WHERE {} LIMIT 1",
-            quote(table.as_str()),
-            Self::equality_predicate(where_clause.clone()),
+            Self::table_name(table),
+            where_clause
+                .iter()
+                .map(|column| format!("{} = ?", quote(&column.column)))
+                .collect::<Vec<_>>()
+                .join(" AND "),
         );
-
-        let query = Self::bind_values(
-            sqlx::query(sqlx::AssertSqlSafe(sql)),
-            where_clause.map(|column| &column.value),
-        )?;
-
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for column in where_clause {
+            query = bind(query, column.value)?;
+        }
         let row = query
             .fetch_optional(&self.pool)
             .await
             .map_err(error("get"))?;
-
-        row.map(|row| self.decode_row(table, row, key)).transpose()
+        row.map(|row| decode_row(row, &key)).transpose()
     }
 
     async fn get_many(
@@ -403,57 +240,62 @@ impl MetaStore for SqliteMetaStore {
             keys = keys.len(),
             "metadata get_many"
         );
-
-        MetaKey::validate_batch_layout(&keys)?;
         let Some(first) = keys.first() else {
             return Ok(Box::new([]));
         };
-
-        let compatible = first.partition.len() == 1
-            && first.clustering.len() == 1
-            && keys.iter().all(|key| key.partition == first.partition);
-
-        if !compatible || keys.len() >= self.max_variable_number().await? {
-            let mut rows = Vec::with_capacity(keys.len());
-            for key in keys {
-                if let Some(row) = self.get(table, key).await? {
-                    rows.push(row);
-                }
-            }
-            return Ok(rows.into_boxed_slice());
+        let clustering = first
+            .clustering
+            .first()
+            .ok_or(QueryError::InvalidRequest("missing clustering key"))?;
+        if keys.iter().any(|key| {
+            key.partition != first.partition
+                || key.clustering.len() != 1
+                || key.clustering[0].column != clustering.column
+        }) {
+            return Err(QueryError::InvalidRequest(
+                "metadata batch requires one partition and clustering key",
+            ));
         }
-
-        let clustering = &first.clustering[0];
-
-        let clustering_placeholders = Self::placeholders(keys.len());
-
-        let sql = format!(
-            "SELECT * FROM {} WHERE {} = ? AND {} IN ({})",
-            quote(table.as_str()),
-            quote(&first.partition[0].column),
-            quote(&clustering.column),
-            clustering_placeholders
-        );
-
-        let query = Self::bind_values(
-            sqlx::query(sqlx::AssertSqlSafe(sql)),
-            first
-                .partition
-                .iter()
-                .map(|column| &column.value)
-                .chain(keys.iter().map(|key| &key.clustering[0].value)),
-        )?;
-
-        query
-            .fetch_all(&self.pool)
-            .await
-            .map_err(error("batch get"))?
-            .into_iter()
-            .map(|row| {
-                let key = Self::row_key(&row, first.partition.clone(), clustering)?;
-                self.decode_row(table, row, key)
-            })
-            .collect()
+        let max_variable_number = self.max_variable_number().await?;
+        let keys_per_query = max_variable_number
+            .saturating_sub(first.partition.len())
+            .max(1);
+        let mut result = Vec::with_capacity(keys.len());
+        for keys in keys.chunks(keys_per_query) {
+            let placeholders = std::iter::repeat_n("?", keys.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT * FROM {} WHERE {} = ? AND {} IN ({})",
+                Self::table_name(table),
+                first.partition[0].column,
+                clustering.column,
+                placeholders
+            );
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for column in &first.partition {
+                query = bind(query, column.value.clone())?;
+            }
+            for key in keys {
+                query = bind(query, key.clustering[0].value.clone())?;
+            }
+            for row in query
+                .fetch_all(&self.pool)
+                .await
+                .map_err(error("batch get"))?
+            {
+                let value = column_value(&row, clustering)?;
+                let key = MetaKey {
+                    partition: first.partition.clone(),
+                    clustering: Box::new([Cell {
+                        column: clustering.column.clone(),
+                        value,
+                    }]),
+                };
+                result.push(decode_row(row, &key)?);
+            }
+        }
+        Ok(result.into_boxed_slice())
     }
 
     async fn get_range(
@@ -465,56 +307,49 @@ impl MetaStore for SqliteMetaStore {
         order: MetaScanOrder,
         limit: Option<usize>,
     ) -> QueryResult<Vec<MetaRow>> {
-        if partition.is_empty() {
-            return Err(QueryError::InvalidRequest("missing partition key"));
-        }
-
         let clustering = start
             .first()
             .ok_or(QueryError::InvalidRequest("missing range start"))?;
-
         let end_clustering = end
             .first()
             .ok_or(QueryError::InvalidRequest("missing range end"))?;
-
-        let predicates = format!(
-            "{} AND {} BETWEEN ? AND ?",
-            Self::equality_predicate(partition.iter()),
-            quote(&clustering.column),
-        );
-
+        let mut predicates = partition
+            .iter()
+            .map(|column| format!("{} = ?", quote(&column.column)))
+            .collect::<Vec<_>>();
+        predicates.push(format!("{} BETWEEN ? AND ?", quote(&clustering.column)));
         let order = match order {
             MetaScanOrder::Ascending => "ASC",
             MetaScanOrder::Descending => "DESC",
         };
-
-        let mut sql = format!(
+        let sql = format!(
             "SELECT * FROM {} WHERE {} ORDER BY {} {order}",
-            quote(table.as_str()),
-            predicates,
+            Self::table_name(table),
+            predicates.join(" AND "),
             quote(&clustering.column)
         );
-
-        if let Some(limit) = limit {
-            sql.push_str(&format!(" LIMIT {limit}"));
+        let sql = limit.map_or(sql.clone(), |limit| format!("{sql} LIMIT {limit}"));
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for column in &partition {
+            query = bind(query, column.value.clone())?;
         }
-
-        let query = Self::bind_values(
-            sqlx::query(sqlx::AssertSqlSafe(sql)),
-            partition
-                .iter()
-                .map(|column| &column.value)
-                .chain([&clustering.value, &end_clustering.value]),
-        )?;
-
+        query = bind(query, clustering.value.clone())?;
+        query = bind(query, end_clustering.value.clone())?;
         query
             .fetch_all(&self.pool)
             .await
             .map_err(error("range query"))?
             .into_iter()
             .map(|row| {
-                let key = Self::row_key(&row, partition.clone(), clustering)?;
-                self.decode_row(table, row, key)
+                let clustering_value = column_value(&row, clustering)?;
+                let key = MetaKey {
+                    partition: partition.clone(),
+                    clustering: Box::new([Cell {
+                        column: clustering.column.clone(),
+                        value: clustering_value,
+                    }]),
+                };
+                decode_row(row, &key)
             })
             .collect()
     }
@@ -525,102 +360,259 @@ impl MetaStore for SqliteMetaStore {
         partition: RowCells,
         clustering: RowCells,
     ) -> QueryResult<Option<MetaRow>> {
-        if partition.is_empty() {
-            return Err(QueryError::InvalidRequest("missing partition key"));
-        }
-
-        let [clustering] = clustering.as_ref() else {
-            return Err(QueryError::InvalidRequest(
-                "metadata seek requires exactly one clustering column",
-            ));
-        };
-
-        let predicates = format!(
-            "{} AND {} <= ?",
-            Self::equality_predicate(partition.iter()),
-            quote(&clustering.column),
-        );
-
+        let clustering = clustering
+            .first()
+            .ok_or(QueryError::InvalidRequest("missing seek clustering"))?;
+        let predicates = partition
+            .iter()
+            .map(|column| format!("{} = ?", quote(&column.column)))
+            .chain(std::iter::once(format!(
+                "{} <= ?",
+                quote(&clustering.column)
+            )))
+            .collect::<Vec<_>>();
         let sql = format!(
             "SELECT * FROM {} WHERE {} ORDER BY {} DESC LIMIT 1",
-            quote(table.as_str()),
-            predicates,
+            Self::table_name(table),
+            predicates.join(" AND "),
             quote(&clustering.column),
         );
-
-        let query = Self::bind_values(
-            sqlx::query(sqlx::AssertSqlSafe(sql)),
-            partition
-                .iter()
-                .map(|column| &column.value)
-                .chain(std::iter::once(&clustering.value)),
-        )?;
-
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for column in &partition {
+            query = bind(query, column.value.clone())?;
+        }
+        query = bind(query, clustering.value.clone())?;
         query
             .fetch_optional(&self.pool)
             .await
             .map_err(error("seek"))?
             .map(|row| {
-                let key = Self::row_key(&row, partition, clustering)?;
-                self.decode_row(table, row, key)
+                let clustering_value = column_value(&row, clustering)?;
+                let key = MetaKey {
+                    partition,
+                    clustering: Box::new([Cell {
+                        column: clustering.column.clone(),
+                        value: clustering_value,
+                    }]),
+                };
+                decode_row(row, &key)
             })
             .transpose()
     }
 
     async fn put(&self, table: MetaTableId, row: MetaRow) -> QueryResult<()> {
-        let columns = Self::row_columns(&row);
-        let sql = Self::insert_sql(table, columns.clone(), 1);
-        let query = Self::bind_values(
-            sqlx::query(sqlx::AssertSqlSafe(sql)),
-            columns.map(|column| &column.value),
-        )?;
-
+        let columns = key_columns(&row.key)
+            .into_iter()
+            .chain(row.columns)
+            .collect::<Vec<_>>();
+        let names = columns
+            .iter()
+            .map(|column| quote(&column.column))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let placeholders = std::iter::repeat_n("?", columns.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT OR REPLACE INTO {} ({names}) VALUES ({placeholders})",
+            Self::table_name(table),
+        );
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for column in columns {
+            query = bind(query, column.value)?;
+        }
         query.execute(&self.pool).await.map_err(error("put"))?;
-
         Ok(())
     }
 
-    async fn put_batch(&self, table: MetaTableId, rows: Box<[MetaRow]>) -> QueryResult<()> {
-        MetaRow::validate_batch_layout(&rows)?;
-        let Some(first) = rows.first() else {
+    async fn put_batch(&self, writes: Box<[MetaWrite]>) -> QueryResult<()> {
+        let writes = writes.into_vec();
+        let Some(first) = writes.first() else {
             return Ok(());
         };
-
-        let columns = Self::row_columns(first);
-        let column_count = columns.clone().count();
+        let column_count = first.row.key.partition.len()
+            + first.row.key.clustering.len()
+            + first.row.columns.len();
         let max_variable_number = self.max_variable_number().await?;
-        if column_count == 0 || column_count > max_variable_number {
-            return Err(QueryError::InvalidRequest(
-                "metadata batch row must fit within SQLite's variable limit",
-            ));
-        }
-
+        let rows_per_query = (max_variable_number / column_count).max(1);
+        let names = key_columns(&first.row.key)
+            .into_iter()
+            .chain(first.row.columns.iter().cloned())
+            .map(|column| quote(&column.column))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let row_placeholders = format!(
+            "({})",
+            std::iter::repeat_n("?", column_count)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let mut transaction = self.pool.begin().await.map_err(error("begin"))?;
-        for chunk in rows.chunks(max_variable_number / column_count) {
-            let sql = Self::insert_sql(table, columns.clone(), chunk.len());
-            let query = Self::bind_values(
-                sqlx::query(sqlx::AssertSqlSafe(sql)),
-                chunk
-                    .iter()
-                    .flat_map(|row| Self::row_columns(row).map(|column| &column.value)),
-            )?;
 
+        for chunk in writes.chunks(rows_per_query) {
+            let sql = format!(
+                "INSERT OR REPLACE INTO {} ({names}) VALUES {}",
+                Self::table_name(first.table),
+                std::iter::repeat_n(row_placeholders.as_str(), chunk.len())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for write in chunk {
+                for column in key_columns(&write.row.key)
+                    .into_iter()
+                    .chain(write.row.columns.iter().cloned())
+                {
+                    query = bind(query, column.value)?;
+                }
+            }
             query
                 .execute(&mut *transaction)
                 .await
                 .map_err(error("batch put"))?;
         }
-
         transaction.commit().await.map_err(error("commit"))?;
-
         Ok(())
     }
+}
+
+fn key_columns(key: &MetaKey) -> Vec<Cell> {
+    key.partition
+        .iter()
+        .chain(key.clustering.iter())
+        .cloned()
+        .collect()
 }
 
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+fn sql_type(kind: CellType) -> &'static str {
+    match kind {
+        CellType::Bool => "INTEGER",
+        CellType::Number => "INTEGER",
+        CellType::Bytes => "BLOB",
+    }
+}
+
+fn bind<'q>(
+    query: sqlx::query::Query<'q, Sqlite, SqliteArguments>,
+    value: CellValue,
+) -> QueryResult<sqlx::query::Query<'q, Sqlite, SqliteArguments>> {
+    Ok(match value {
+        CellValue::Bool(value) => query.bind(i64::from(value)),
+        CellValue::Number(value) => query.bind(value),
+        CellValue::Bytes(value) => query.bind(value.into_vec()),
+    })
+}
+
+fn column_value(row: &sqlx::sqlite::SqliteRow, column: &Cell) -> QueryResult<CellValue> {
+    match &column.value {
+        CellValue::Bool(_) => row
+            .try_get::<i64, _>(column.column.as_ref())
+            .map(|value| CellValue::Bool(value != 0))
+            .map_err(|_| {
+                QueryError::Backend(format!("unsupported sqlite column `{}`", column.column))
+            }),
+        CellValue::Number(_) => row
+            .try_get::<i64, _>(column.column.as_ref())
+            .map(|value| CellValue::Number(value.to_string()))
+            .map_err(|_| {
+                QueryError::Backend(format!("unsupported sqlite column `{}`", column.column))
+            }),
+        CellValue::Bytes(_) => row
+            .try_get::<Vec<u8>, _>(column.column.as_ref())
+            .map(|value| CellValue::Bytes(value.into_boxed_slice()))
+            .map_err(|_| {
+                QueryError::Backend(format!("unsupported sqlite column `{}`", column.column))
+            }),
+    }
+}
+
+fn decode_row(row: sqlx::sqlite::SqliteRow, key: &MetaKey) -> QueryResult<MetaRow> {
+    let mut columns = Vec::new();
+    for name in row.columns().iter().map(|column| column.name()) {
+        if key.partition.iter().any(|column| column.column == name)
+            || key.clustering.iter().any(|column| column.column == name)
+        {
+            continue;
+        }
+        let value = if let Ok(value) = row.try_get::<i64, _>(name) {
+            CellValue::Number(value.to_string())
+        } else if let Ok(value) = row.try_get::<Vec<u8>, _>(name) {
+            CellValue::Bytes(value.into_boxed_slice())
+        } else {
+            return Err(QueryError::Backend(format!(
+                "unsupported sqlite column `{name}`"
+            )));
+        };
+
+        columns.push(Cell::new(name.to_string(), value));
+    }
+    Ok(MetaRow {
+        key: key.clone(),
+        columns: columns.into_boxed_slice(),
+    })
+}
+
 fn error(operation: &'static str) -> impl Fn(sqlx::Error) -> QueryError {
     move |error| QueryError::Backend(format!("sqlite {operation}: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DEFINITION: MetaTableDef = MetaTableDef {
+        partition_key: &[ColumnDef::new_number("id")],
+        clustering_key: &[],
+        columns: &[ColumnDef::new_byte("value")],
+    };
+
+    #[tokio::test]
+    async fn stores_native_sqlite_columns() {
+        let store = SqliteMetaStore::new_with_config(SqliteMetaStoreConfig::new("sqlite::memory:"))
+            .await
+            .unwrap();
+        let table = MetaTableId::new("test");
+        let key = MetaKey {
+            partition: Box::new([Cell {
+                column: "id".into(),
+                value: CellValue::Number("7".into()),
+            }]),
+            clustering: Box::new([]),
+        };
+        store.init(table, DEFINITION).await.unwrap();
+        store
+            .put(
+                table,
+                MetaRow {
+                    key: key.clone(),
+                    columns: Box::new([Cell {
+                        column: "value".into(),
+                        value: CellValue::Bytes(b"ok".to_vec().into_boxed_slice()),
+                    }]),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(store.get(table, key).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn rejects_existing_schema_mismatch() {
+        let store = SqliteMetaStore::new_with_config(SqliteMetaStoreConfig::new("sqlite::memory:"))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+
+        let error = store.init(MetaTableId::new("test"), DEFINITION).await;
+        assert!(
+            matches!(error, Err(QueryError::Backend(message)) if message.contains("schema mismatch"))
+        );
+    }
 }

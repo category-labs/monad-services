@@ -359,6 +359,7 @@ pub enum ErrorCode {
     InvalidParams = -32602,
     InternalError = -32603,
     MethodNotSupported = -32004,
+    ResourceNotFound = -32001,
 }
 
 impl ErrorCode {
@@ -379,6 +380,7 @@ impl ErrorCode {
             Self::InvalidParams => "Invalid params",
             Self::InternalError => "Internal error",
             Self::MethodNotSupported => "Method not supported",
+            Self::ResourceNotFound => "Resource not found",
         }
     }
 }

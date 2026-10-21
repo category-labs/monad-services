@@ -20,7 +20,7 @@ use std::{
 
 use monad_query_types::{
     store::meta::{
-        column::RowCells, table::MetaTableId, MetaKey, MetaRow, MetaScanOrder, MetaStore,
+        column::RowCells, table::MetaTableId, MetaKey, MetaRow, MetaScanOrder, MetaStore, MetaWrite,
     },
     QueryResult,
 };
@@ -55,24 +55,25 @@ impl MetaStore for InMemoryMetaStore {
             partition: partition.clone(),
             clustering: start,
         };
-
         let end = MetaKey {
             partition,
             clustering: end,
         };
-
-        let rows = self.rows.read().expect("metadata lock is not poisoned");
-        let range = rows.range((table, start)..=(table, end));
-        let limit = limit.unwrap_or(usize::MAX);
-
-        Ok(match order {
-            MetaScanOrder::Ascending => range.take(limit).map(|(_, row)| row.clone()).collect(),
-            MetaScanOrder::Descending => range
-                .rev()
-                .take(limit)
-                .map(|(_, row)| row.clone())
-                .collect(),
-        })
+        let mut rows = self
+            .rows
+            .read()
+            .expect("metadata lock is not poisoned")
+            .range((table, start)..=(table, end))
+            .map(|(_, row)| row.clone())
+            .collect::<Vec<_>>();
+        match order {
+            MetaScanOrder::Ascending => {}
+            MetaScanOrder::Descending => rows.reverse(),
+        }
+        if let Some(limit) = limit {
+            rows.truncate(limit);
+        }
+        Ok(rows)
     }
 
     async fn seek_le(
@@ -85,12 +86,10 @@ impl MetaStore for InMemoryMetaStore {
             partition: partition.clone(),
             clustering: Box::new([]),
         };
-
         let end = MetaKey {
             partition,
             clustering,
         };
-
         Ok(self
             .rows
             .read()
@@ -105,18 +104,83 @@ impl MetaStore for InMemoryMetaStore {
             .write()
             .expect("metadata lock is not poisoned")
             .insert((table, row.key.clone()), row);
-
         Ok(())
     }
 
-    async fn put_batch(&self, table: MetaTableId, rows: Box<[MetaRow]>) -> QueryResult<()> {
-        MetaRow::validate_batch_layout(&rows)?;
-        let mut stored_rows = self.rows.write().expect("metadata lock is not poisoned");
-
-        for row in rows {
-            stored_rows.insert((table, row.key.clone()), row);
+    async fn put_batch(&self, writes: Box<[MetaWrite]>) -> QueryResult<()> {
+        let mut rows = self.rows.write().expect("metadata lock is not poisoned");
+        for write in writes {
+            rows.insert((write.table, write.row.key.clone()), write.row);
         }
-
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use monad_query_types::store::meta::{
+        column::{Cell, CellValue},
+        table::MetaTableId,
+    };
+
+    use super::{InMemoryMetaStore, MetaKey, MetaRow, MetaStore};
+
+    fn key(id: u64) -> MetaKey {
+        MetaKey {
+            partition: Box::new([Cell::new_number("id", id)]),
+            clustering: Box::new([]),
+        }
+    }
+
+    #[tokio::test]
+    async fn stores_typed_rows() {
+        let store = InMemoryMetaStore::default();
+        let table = MetaTableId::new("test");
+        let row = MetaRow {
+            key: key(1),
+            columns: Box::new([Cell::new_number("value", 42)]),
+        };
+
+        store.put(table, row.clone()).await.unwrap();
+        assert_eq!(store.get(table, key(1)).await.unwrap(), Some(row));
+    }
+
+    #[tokio::test]
+    async fn seeks_to_predecessor() {
+        let store = InMemoryMetaStore::default();
+        let table = MetaTableId::new("test");
+        let partition = Box::new([Cell::new_number("family", 1)]);
+        let row = |id: u64| MetaRow {
+            key: MetaKey {
+                partition: partition.clone(),
+                clustering: Box::new([Cell::new_number("first_primary_id", id)]),
+            },
+            columns: Box::new([]),
+        };
+
+        store.put(table, row(10)).await.unwrap();
+        store.put(table, row(20)).await.unwrap();
+        let predecessor = store
+            .seek_le(
+                table,
+                partition.clone(),
+                Box::new([Cell::new_number("first_primary_id", 19)]),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            predecessor.key.clustering[0].value,
+            CellValue::Number("10".to_owned())
+        );
+        assert!(store
+            .seek_le(
+                table,
+                partition,
+                Box::new([Cell::new_number("first_primary_id", 9)]),
+            )
+            .await
+            .unwrap()
+            .is_none());
     }
 }
