@@ -5,7 +5,7 @@ case "$1" in
   remove|purge)
     if [ -d /run/systemd/system ]; then
       systemctl daemon-reload || true
-      for unit in monad-services-archiver monad-services-archive-checker monad-services-indexer monad-services-block-writer; do
+      for unit in monad-rpc; do
         systemctl reset-failed "$unit.service" >/dev/null 2>&1 || true
       done
     fi

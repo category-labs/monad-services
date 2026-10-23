@@ -11,5 +11,5 @@ override_dh_auto_install:
 
 override_dh_strip:
 	if [ "$(STRIP_SYMBOLS)" = 1 ]; then dh_strip --no-automatic-dbgsym; fi
-	find debian/monad-services/usr/lib/monad-services -type f \
+	find debian/monad-services/usr/local/lib -type f \
 		-exec patchelf --set-rpath '$$ORIGIN' {} \;

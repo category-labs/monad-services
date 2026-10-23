@@ -3,7 +3,7 @@ set -eu
 
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 
-lib_dir="debian/monad-services/usr/lib/monad-services"
+lib_dir="debian/monad-services/usr/local/lib"
 mkdir -p "$lib_dir"
 
 triedb=$(find target/release -type f -name 'libtriedb_driver.so' \
