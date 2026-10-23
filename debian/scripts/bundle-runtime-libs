@@ -27,3 +27,6 @@ if [ -n "$duplicates" ]; then
 fi
 
 [ -z "$libs" ] || cp $libs "$lib_dir/"
+
+# Ship libsecp256k1.so.6 rather than depending on libsecp256k1-6 (absent on 24.04).
+cp -L /usr/lib/x86_64-linux-gnu/libsecp256k1.so.6 "$lib_dir/"
