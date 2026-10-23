@@ -11,4 +11,6 @@ TRIEDB_TARGET=triedb_driver \
 ASMFLAGS=-march=haswell \
 CFLAGS=-march=haswell \
 CXXFLAGS='-march=haswell -DQUILL_ACTIVE_LOG_LEVEL=QUILL_LOG_LEVEL_CRITICAL' \
-cargo build --locked --release -p monad-rpc --bin monad-rpc
+cargo build --locked --release \
+  -p monad-rpc --bin monad-rpc \
+  -p monad-query-cli --bin monad-query

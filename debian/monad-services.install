@@ -1,2 +1,3 @@
 target/release/monad-rpc usr/bin/
+target/release/monad-query usr/bin/
 debian/resources/usr/lib/systemd/system/*.service usr/lib/systemd/system/
