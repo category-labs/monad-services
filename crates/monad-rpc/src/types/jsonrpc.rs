@@ -15,6 +15,7 @@
 
 //! reference: https://www.jsonrpc.org/specification
 
+use alloy_primitives::TxHash;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 use tracing::error;
@@ -457,20 +458,15 @@ impl JsonRpcError {
     }
 
     /// EIP-7966 errors
-    pub fn tx_sync_timeout(tx_hash: String, timeout_ms: u64) -> Self {
-        Self {
-            code: ErrorCode::TransactionTimeout.code(),
-            message: format!(
+    pub fn tx_sync_timeout(tx_hash: TxHash, timeout_ms: u64) -> Self {
+        Self::with_message_and_data(
+            ErrorCode::TransactionTimeout,
+            format!(
                 "Transaction receipt not available within {}ms timeout",
                 timeout_ms
             ),
-            data: Some(
-                serde_json::value::to_raw_value(&serde_json::json!({
-                    "hash": tx_hash
-                }))
-                .expect("RawValue can be built from Value"),
-            ),
-        }
+            Some(tx_hash.to_string()),
+        )
     }
 
     pub fn eth_call_error(message: String, data: Option<String>) -> Self {
@@ -744,5 +740,24 @@ mod test {
 
         let result = serialize_with_size_limit(&small_value, 14);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tx_sync_timeout() {
+        use alloy_primitives::b256;
+
+        use super::JsonRpcError;
+
+        let tx_hash = b256!("0x0e07d8b53ed3d91314c80e53cf25bcde02084939395845cbb625b029d568135c");
+
+        // EIP-7966: data is the tx hash as a plain hex string
+        assert_eq!(
+            serde_json::to_value(JsonRpcError::tx_sync_timeout(tx_hash, 2000)).unwrap(),
+            serde_json::json!({
+                "code": 4,
+                "message": "Transaction receipt not available within 2000ms timeout",
+                "data": "0x0e07d8b53ed3d91314c80e53cf25bcde02084939395845cbb625b029d568135c",
+            })
+        );
     }
 }
