@@ -19,6 +19,7 @@ use alloy_consensus::{Transaction as _, TxEnvelope};
 use alloy_eips::Decodable2718;
 use alloy_primitives::{Address, FixedBytes};
 use alloy_rpc_types::Filter;
+use monad_eth_txpool_types::EthTxPoolDropReason;
 use monad_exec_events::BlockCommitState;
 use monad_rpc_docs::rpc;
 use monad_triedb_utils::triedb_env::Triedb;
@@ -53,6 +54,15 @@ impl From<FilterError> for JsonRpcError {
             FilterError::RangeTooLarge => {
                 JsonRpcError::with_message(ErrorCode::InvalidParams, "block range too large")
             }
+        }
+    }
+}
+
+impl From<EthTxPoolDropReason> for JsonRpcError {
+    fn from(reason: EthTxPoolDropReason) -> Self {
+        match reason {
+            EthTxPoolDropReason::InsufficientBalance => JsonRpcError::insufficient_funds(),
+            _ => JsonRpcError::with_message(ErrorCode::ServerError, reason.as_user_string()),
         }
     }
 }
@@ -232,10 +242,7 @@ async fn submit_to_txpool(
             ErrorCode::ServerError,
             "rejected".to_string(),
         )),
-        TxStatus::Dropped { reason } => Err(JsonRpcError::with_message(
-            ErrorCode::ServerError,
-            reason.as_user_string(),
-        )),
+        TxStatus::Dropped { reason } => Err(reason.into()),
         TxStatus::Tracked | TxStatus::Committed => Ok(()),
         TxStatus::Unknown => {
             warn!("txpool tx status last value was unknown");
@@ -429,11 +436,15 @@ mod tests {
     use alloy_rlp::Encodable;
     use alloy_signer::SignerSync;
     use alloy_signer_local::PrivateKeySigner;
+    use monad_eth_txpool_types::EthTxPoolDropReason;
     use monad_eth_types::EthAccount;
     use monad_triedb_utils::mock_triedb::MockTriedb;
 
     use super::{monad_eth_sendRawTransaction, MonadEthSendRawTransactionParams};
-    use crate::{txpool::EthTxPoolBridgeClient, types::eth_json::UnformattedData};
+    use crate::{
+        txpool::EthTxPoolBridgeClient,
+        types::{eth_json::UnformattedData, jsonrpc::JsonRpcError},
+    };
 
     fn serialize_tx(tx: impl Encodable + Encodable2718) -> UnformattedData {
         let mut rlp_encoded_tx = Vec::new();
@@ -509,6 +520,14 @@ mod tests {
                 idx + 1
             );
         }
+    }
+
+    #[test]
+    fn dropped_tx_insufficient_balance() {
+        assert_eq!(
+            JsonRpcError::from(EthTxPoolDropReason::InsufficientBalance),
+            JsonRpcError::insufficient_funds()
+        );
     }
 
     // TODO(andr-dev): Re-enable tests after fixing test fixtures
