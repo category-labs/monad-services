@@ -11,22 +11,22 @@ monad-query-write     = { path = "./crates/monad-query-write" }
 monad-rpc-docs        = { path = "./crates/monad-rpc/monad-rpc-docs" }
 monad-rpc-docs-derive = { path = "./crates/monad-rpc/monad-rpc-docs/monad-rpc-docs-derive" }
 
-monad-chain-config     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-compress         = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-eth-testutil     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-eth-txpool-ipc   = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-eth-txpool-types = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-eth-types        = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-ethcall          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-event-ring       = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-exec-events      = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-metrics          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-node-config      = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-pprof            = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-tracing-timing   = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-triedb-utils     = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-types            = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
-monad-version          = { git = "https://github.com/category-labs/monad-bft", rev = "59323b120b272e318ffc91b2b3df12aaad793264" }
+monad-chain-config     = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-compress         = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-eth-testutil     = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-eth-txpool-ipc   = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-eth-txpool-types = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-eth-types        = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-ethcall          = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-event-ring       = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-exec-events      = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-metrics          = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-node-config      = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-pprof            = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-tracing-timing   = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-triedb-utils     = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-types            = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
+monad-version          = { git = "https://github.com/category-labs/monad-bft", rev = "26553fb0d8743fac9a0c752772be353972919dc9" }
 
 actix = "0.13"
 actix-http = { version = "3.11.1", default-features = false }

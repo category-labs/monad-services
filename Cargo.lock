@@ -4755,7 +4755,7 @@ dependencies = [
 [[package]]
 name = "monad-bls"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-rlp",
  "bitvec",
@@ -4771,7 +4771,7 @@ dependencies = [
 [[package]]
 name = "monad-build"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "bindgen 0.71.1",
  "cargo_metadata",
@@ -4782,7 +4782,7 @@ dependencies = [
 [[package]]
 name = "monad-chain-config"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "monad-eth-types",
  "monad-types",
@@ -4794,7 +4794,7 @@ dependencies = [
 [[package]]
 name = "monad-compress"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "brotli",
  "bytes",
@@ -4806,7 +4806,7 @@ dependencies = [
 [[package]]
 name = "monad-consensus"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-rlp",
  "lru 0.16.3",
@@ -4822,7 +4822,7 @@ dependencies = [
 [[package]]
 name = "monad-consensus-types"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -4844,7 +4844,7 @@ dependencies = [
 [[package]]
 name = "monad-crypto"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-rlp",
  "blake3",
@@ -4857,7 +4857,7 @@ dependencies = [
 [[package]]
 name = "monad-cxx"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "monad-build",
  "tracing",
@@ -4866,7 +4866,7 @@ dependencies = [
 [[package]]
 name = "monad-eth-block-policy"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -4889,7 +4889,7 @@ dependencies = [
 [[package]]
 name = "monad-eth-testutil"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -4913,7 +4913,7 @@ dependencies = [
 [[package]]
 name = "monad-eth-txpool-ipc"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-rlp",
  "bincode",
@@ -4928,7 +4928,7 @@ dependencies = [
 [[package]]
 name = "monad-eth-txpool-types"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -4940,7 +4940,7 @@ dependencies = [
 [[package]]
 name = "monad-eth-types"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -4955,7 +4955,7 @@ dependencies = [
 [[package]]
 name = "monad-ethcall"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -4973,7 +4973,7 @@ dependencies = [
 [[package]]
 name = "monad-event-ring"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "build-rs",
  "libc",
@@ -4983,7 +4983,7 @@ dependencies = [
 [[package]]
 name = "monad-exec-events"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -5000,7 +5000,7 @@ dependencies = [
 [[package]]
 name = "monad-execution-state-read"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -5016,7 +5016,7 @@ dependencies = [
 [[package]]
 name = "monad-executor"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "bytes",
  "hdrhistogram",
@@ -5028,7 +5028,7 @@ dependencies = [
 [[package]]
 name = "monad-metrics"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "actix-web",
  "clap",
@@ -5045,7 +5045,7 @@ dependencies = [
 [[package]]
 name = "monad-node-config"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-primitives",
  "monad-bls",
@@ -5056,12 +5056,13 @@ dependencies = [
  "monad-secp",
  "monad-types",
  "serde",
+ "serde_with",
 ]
 
 [[package]]
 name = "monad-peer-score"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "humantime",
  "lru 0.16.3",
@@ -5073,7 +5074,7 @@ dependencies = [
 [[package]]
 name = "monad-pprof"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "actix-server",
  "actix-web",
@@ -5265,7 +5266,7 @@ dependencies = [
 [[package]]
 name = "monad-secp"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -5285,7 +5286,7 @@ dependencies = [
 [[package]]
 name = "monad-system-calls"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -5305,7 +5306,7 @@ dependencies = [
 [[package]]
 name = "monad-testutil"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-rlp",
  "monad-consensus",
@@ -5320,7 +5321,7 @@ dependencies = [
 [[package]]
 name = "monad-tfm"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-primitives",
 ]
@@ -5328,7 +5329,7 @@ dependencies = [
 [[package]]
 name = "monad-tracing-timing"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "opentelemetry",
  "quanta",
@@ -5339,7 +5340,7 @@ dependencies = [
 [[package]]
 name = "monad-triedb"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "futures",
  "monad-build",
@@ -5350,7 +5351,7 @@ dependencies = [
 [[package]]
 name = "monad-triedb-utils"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -5371,7 +5372,7 @@ dependencies = [
 [[package]]
 name = "monad-types"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -5387,7 +5388,7 @@ dependencies = [
 [[package]]
 name = "monad-validator"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -5405,7 +5406,7 @@ dependencies = [
 [[package]]
 name = "monad-version"
 version = "0.1.0"
-source = "git+https://github.com/category-labs/monad-bft?rev=59323b120b272e318ffc91b2b3df12aaad793264#59323b120b272e318ffc91b2b3df12aaad793264"
+source = "git+https://github.com/category-labs/monad-bft?rev=26553fb0d8743fac9a0c752772be353972919dc9#26553fb0d8743fac9a0c752772be353972919dc9"
 
 [[package]]
 name = "mongocrypt"
