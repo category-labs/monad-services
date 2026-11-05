@@ -807,7 +807,7 @@ pub async fn monad_debug_traceCall<T: Triedb + TriedbPath>(
             })
         }
 
-        TracerDescriptor::PreStateTracer | TracerDescriptor::StateDiffTracer => {
+        TracerDescriptor::PreStateTracer(_) => {
             // reject on the approximated encoded length before serialization
             if raw_payload.len() > max_response_size {
                 return Err(JsonRpcError::max_response_size_exceeded());
@@ -1014,7 +1014,7 @@ mod tests {
     use monad_chain_config::execution_revision::MonadExecutionRevision;
     use monad_ethcall::{
         overrides::{StateOverrideObject, StateOverrideSet},
-        EthCallResult, MonadTracer,
+        EthCallResult, MonadTracer, PrestateTracerConfig,
     };
     use monad_triedb_utils::{
         mock_triedb::MockTriedb,
@@ -1061,14 +1061,20 @@ mod tests {
                 (
                     Tracer::PreStateTracer,
                     false,
-                    TracerDescriptor::PreStateTracer,
-                    MonadTracer::PreStateTracer,
+                    TracerDescriptor::PreStateTracer(PrestateTracerConfig::default()),
+                    MonadTracer::PreStateTracer(PrestateTracerConfig::default()),
                 ),
                 (
                     Tracer::PreStateTracer,
                     true,
-                    TracerDescriptor::StateDiffTracer,
-                    MonadTracer::StateDiffTracer,
+                    TracerDescriptor::PreStateTracer(PrestateTracerConfig {
+                        diff_mode: true,
+                        ..Default::default()
+                    }),
+                    MonadTracer::PreStateTracer(PrestateTracerConfig {
+                        diff_mode: true,
+                        ..Default::default()
+                    }),
                 ),
             ] {
                 let descriptor = TracerDescriptor::new(
@@ -1323,6 +1329,38 @@ mod tests {
         let params: MonadDebugTraceCallParams = from_str(raw).unwrap();
 
         assert_eq!(params.tracer.tracer_params.tracer, Tracer::PreStateTracer);
+    }
+
+    #[test]
+    fn parse_trace_call_request_with_disable_code() {
+        let raw = r#"
+        [
+          {
+            "from": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "to": "0x0000000000a39bb272e79075ade125fd351887ac",
+            "data": "0xd0e30db0"
+          },
+          "latest",
+          {
+            "tracer": "prestateTracer",
+            "tracerConfig": { "diffMode": true, "disableCode": true },
+            "stateOverrides": {
+              "0x0000000000a39bb272e79075ade125fd351887ac": { "balance": "0x1" }
+            }
+          }
+        ]
+        "#;
+
+        let params: MonadDebugTraceCallParams = from_str(raw).unwrap();
+
+        assert_eq!(params.tracer.state_overrides.len(), 1);
+        assert_eq!(
+            TracerDescriptor::new(params.tracer.tracer_params, usize::MAX),
+            TracerDescriptor::PreStateTracer(PrestateTracerConfig {
+                diff_mode: true,
+                disable_code: true,
+            })
+        );
     }
 
     #[test]

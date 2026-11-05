@@ -20,6 +20,7 @@ use alloy_primitives::{
     Address, Bytes, FixedBytes, Log,
 };
 use alloy_rlp::{Decodable, Encodable, RlpDecodable};
+use monad_ethcall::PrestateTracerConfig;
 use monad_rpc_docs::rpc;
 use monad_triedb_utils::triedb_env::{BlockKey, Triedb};
 use serde::{Deserialize, Serialize};
@@ -286,8 +287,7 @@ pub struct TracerObject {
 pub enum TracerDescriptor {
     NoopTracer,
     CallTracer { max_size: usize },
-    PreStateTracer,
-    StateDiffTracer,
+    PreStateTracer(PrestateTracerConfig),
     AccessListTracer,
 }
 
@@ -297,8 +297,10 @@ impl TracerDescriptor {
             Tracer::CallTracer => Self::CallTracer {
                 max_size: max_response_size,
             },
-            Tracer::PreStateTracer if tracer.config.diff_mode => Self::StateDiffTracer,
-            Tracer::PreStateTracer => Self::PreStateTracer,
+            Tracer::PreStateTracer => Self::PreStateTracer(PrestateTracerConfig {
+                diff_mode: tracer.config.diff_mode,
+                disable_code: tracer.config.disable_code,
+            }),
         }
     }
 
@@ -315,8 +317,7 @@ impl From<TracerDescriptor> for monad_ethcall::MonadTracer {
         match tracer {
             TracerDescriptor::NoopTracer => Self::NoopTracer,
             TracerDescriptor::CallTracer { .. } => Self::CallTracer,
-            TracerDescriptor::PreStateTracer => Self::PreStateTracer,
-            TracerDescriptor::StateDiffTracer => Self::StateDiffTracer,
+            TracerDescriptor::PreStateTracer(config) => Self::PreStateTracer(config),
             TracerDescriptor::AccessListTracer => Self::AccessListTracer,
         }
     }
@@ -345,6 +346,11 @@ pub struct TracerConfig {
     /// log for callTracer, ignored for prestateTracer
     #[serde(default)]
     pub with_log: bool,
+
+    /// disableCode for prestateTracer, ignored for callTracer: report each
+    /// account's codeHash in place of its code
+    #[serde(default)]
+    pub disable_code: bool,
 }
 
 #[derive(Clone, Copy, Deserialize, Debug, schemars::JsonSchema)]
@@ -1169,6 +1175,7 @@ mod tests {
                         with_log: true,
                         diff_mode: false,
                         only_top_call: false,
+                        disable_code: false,
                     },
                 },
             },
@@ -1276,6 +1283,7 @@ mod tests {
                         with_log: true,
                         diff_mode: false,
                         only_top_call: true,
+                        disable_code: false,
                     },
                 },
             },
@@ -1330,6 +1338,7 @@ mod tests {
                         with_log: true,
                         diff_mode: false,
                         only_top_call: false,
+                        disable_code: false,
                     },
                 },
             },
@@ -1353,6 +1362,7 @@ mod tests {
                         with_log: false,
                         diff_mode: false,
                         only_top_call: false,
+                        disable_code: false,
                     },
                 },
             },
@@ -1688,5 +1698,63 @@ mod tests {
         let c_frame = &e_frame.calls[0];
         assert_eq!(c_frame.logs.len(), 1);
         assert_eq!(c_frame.logs[0].index.0, 2); // C0
+    }
+
+    #[test]
+    fn prestate_tracer_disable_code() {
+        let hash = "0xead27352d4f846afb50c9a33dadbc76512fc5d13adb42dd21c722912b3876be3";
+        let prestate = |diff_mode, disable_code| {
+            TracerDescriptor::PreStateTracer(PrestateTracerConfig {
+                diff_mode,
+                disable_code,
+            })
+        };
+        for (name, config, expected) in [
+            ("prestateTracer", "{}", prestate(false, false)),
+            (
+                "prestateTracer",
+                r#"{"disableCode":false}"#,
+                prestate(false, false),
+            ),
+            (
+                "prestateTracer",
+                r#"{"disableCode":true}"#,
+                prestate(false, true),
+            ),
+            (
+                "prestateTracer",
+                r#"{"diffMode":true}"#,
+                prestate(true, false),
+            ),
+            (
+                "prestateTracer",
+                r#"{"diffMode":true,"disableCode":true}"#,
+                prestate(true, true),
+            ),
+            // The call tracer has no code to leave out.
+            (
+                "callTracer",
+                r#"{"disableCode":true}"#,
+                TracerDescriptor::CallTracer {
+                    max_size: usize::MAX,
+                },
+            ),
+        ] {
+            let tracer = format!(r#"{{"tracer":"{name}","tracerConfig":{config}}}"#);
+            let tx: MonadDebugTraceTransactionParams =
+                serde_json::from_str(&format!(r#"["{hash}",{tracer}]"#)).unwrap();
+            let by_number: MonadDebugTraceBlockByNumberParams =
+                serde_json::from_str(&format!(r#"["latest",{tracer}]"#)).unwrap();
+            let by_hash: MonadDebugTraceBlockByHashParams =
+                serde_json::from_str(&format!(r#"["{hash}",{tracer}]"#)).unwrap();
+
+            for tracer_object in [tx.tracer, by_number.tracer, by_hash.tracer] {
+                assert_eq!(
+                    TracerDescriptor::new(tracer_object, usize::MAX),
+                    expected,
+                    "{name} {config}"
+                );
+            }
+        }
     }
 }
