@@ -23,16 +23,22 @@ use monad_query_types::{
 };
 
 use self::in_memory::InMemoryMetaStore;
+#[cfg(feature = "scylla")]
+use self::scylla::ScyllaMetaStore;
 #[cfg(feature = "sqlite")]
 use self::sqlite::SqliteMetaStore;
 
 pub mod in_memory;
+#[cfg(feature = "scylla")]
+pub mod scylla;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 #[derive(Clone)]
 pub enum MetaStoreBackend {
     InMemory(InMemoryMetaStore),
+    #[cfg(feature = "scylla")]
+    Scylla(ScyllaMetaStore),
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteMetaStore),
 }
@@ -41,6 +47,8 @@ macro_rules! with_meta_backend {
     ($backend:expr, $store:ident => $operation:expr) => {
         match $backend {
             MetaStoreBackend::InMemory($store) => $operation,
+            #[cfg(feature = "scylla")]
+            MetaStoreBackend::Scylla($store) => $operation,
             #[cfg(feature = "sqlite")]
             MetaStoreBackend::Sqlite($store) => $operation,
         }
