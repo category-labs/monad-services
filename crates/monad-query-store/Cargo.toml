@@ -9,6 +9,7 @@ default = ["rate-limit", "rocksdb", "s3", "sqlite"]
 rate-limit = ["dep:governor"]
 rocksdb = ["dep:rocksdb"]
 s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:futures"]
+scylla = ["dep:scylla"]
 sqlite = ["dep:libsqlite3-sys", "dep:sqlx"]
 
 [dependencies]
@@ -21,6 +22,7 @@ futures = { workspace = true, optional = true }
 governor = { workspace = true, optional = true }
 libsqlite3-sys = { workspace = true, optional = true }
 rocksdb = { workspace = true, optional = true }
+scylla = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 sqlx = { workspace = true, optional = true, features = ["runtime-tokio", "sqlite"] }
 tokio = { workspace = true, features = ["fs", "rt", "sync"] }
