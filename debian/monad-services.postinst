@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+# monad-rpc moved from /usr/local/bin (monad package) to /usr/bin; warn if a
+# unit override still points ExecStart at a binary that no longer exists.
+if [ "$1" = configure ] && [ -d /run/systemd/system ]; then
+    exec_path=$(systemctl show -p ExecStart --value monad-rpc.service \
+        | sed -n "s/.*path=\([^ ;]*\).*/\1/p" | head -n1)
+    if [ -n "$exec_path" ] && [ ! -x "$exec_path" ]; then
+        echo "WARNING: monad-rpc.service ExecStart points at $exec_path, which does not exist." >&2
+        echo "Check overrides in /etc/systemd/system/monad-rpc.service{,.d/}." >&2
+    fi
+fi
+
+exit 0

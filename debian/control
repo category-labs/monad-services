@@ -7,6 +7,7 @@ Standards-Version: 4.7.0
 
 Package: monad-services
 Architecture: amd64
-Depends: ca-certificates, libsecp256k1-6, ${shlibs:Depends}, ${misc:Depends}
+Depends: ca-certificates, ${shlibs:Depends}, ${misc:Depends}
+Replaces: monad (<< 0.16.7~)
 Description: Monad RPC binaries
  maintained by the monad-services repository.
