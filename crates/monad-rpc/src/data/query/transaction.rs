@@ -26,7 +26,6 @@ use super::{FilterValues, QueryFieldSelection, QueryFilter};
 pub enum TxQueryField {
     AccessList,
     AuthorizationList,
-    BlobVersionedHashes,
     BlockHash,
     BlockNumber,
     BlockTimestamp,
@@ -41,7 +40,6 @@ pub enum TxQueryField {
     Hash,
     Input,
     LogsBloom,
-    MaxFeePerBlobGas,
     MaxFeePerGas,
     MaxPriorityFeePerGas,
     Nonce,
@@ -62,7 +60,6 @@ pub enum TxQueryField {
 pub struct TxQueryItem {
     pub access_list: Option<AccessList>,
     pub authorization_list: Option<Vec<SignedAuthorization>>,
-    pub blob_versioned_hashes: Option<Vec<B256>>,
     pub block_hash: Option<B256>,
     pub block_number: Option<U64>,
     pub block_timestamp: Option<U64>,
@@ -77,7 +74,6 @@ pub struct TxQueryItem {
     pub hash: Option<B256>,
     pub input: Option<Bytes>,
     pub logs_bloom: Option<alloy_primitives::Bloom>,
-    pub max_fee_per_blob_gas: Option<U256>,
     pub max_fee_per_gas: Option<U256>,
     pub max_priority_fee_per_gas: Option<U256>,
     pub nonce: Option<U64>,
@@ -106,10 +102,6 @@ impl TxQueryItem {
             authorization_list: fields
                 .transactions_selected(TxQueryField::AuthorizationList)
                 .then(|| item.authorization_list)
-                .flatten(),
-            blob_versioned_hashes: fields
-                .transactions_selected(TxQueryField::BlobVersionedHashes)
-                .then(|| item.blob_versioned_hashes)
                 .flatten(),
             block_hash: fields
                 .transactions_selected(TxQueryField::BlockHash)
@@ -154,10 +146,6 @@ impl TxQueryItem {
             logs_bloom: fields
                 .transactions_selected(TxQueryField::LogsBloom)
                 .then_some(item.logs_bloom),
-            max_fee_per_blob_gas: fields
-                .transactions_selected(TxQueryField::MaxFeePerBlobGas)
-                .then_some(item.max_fee_per_blob_gas)
-                .flatten(),
             max_fee_per_gas: (fields.transactions_selected(TxQueryField::MaxFeePerGas)
                 && has_eip1559_fields)
                 .then_some(item.max_fee_per_gas)
