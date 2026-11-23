@@ -66,6 +66,11 @@ pub(crate) async fn open_tables(
             .await
             .map_err(|error| eyre::eyre!("open metadata store: {error}"))?,
         ),
+        MonadQueryServiceMetadataStorageConfig::Scylla { config } => MetaStoreBackend::Scylla(
+            monad_query_store::meta::scylla::ScyllaMetaStore::new(config)
+                .await
+                .map_err(|error| eyre::eyre!("open metadata store: {error}"))?,
+        ),
     };
 
     let blob = match blob {

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use eyre::{Result, WrapErr};
-use monad_query_store::blob::s3::S3BlobStoreConfig;
+use monad_query_store::{blob::s3::S3BlobStoreConfig, meta::scylla::ScyllaMetaStoreConfig};
 use serde::Deserialize;
 use validator::Validate;
 
@@ -63,7 +63,14 @@ pub struct MonadQueryServiceStorageConfig {
 #[serde(tag = "backend", rename_all = "snake_case")]
 pub enum MonadQueryServiceMetadataStorageConfig {
     InMemory,
-    Sqlite { url: String, max_connections: u32 },
+    Sqlite {
+        url: String,
+        max_connections: u32,
+    },
+    Scylla {
+        #[serde(flatten)]
+        config: ScyllaMetaStoreConfig,
+    },
 }
 
 #[derive(Debug, Deserialize)]

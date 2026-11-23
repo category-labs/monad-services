@@ -15,8 +15,9 @@ use scylla::{
     client::{session::Session, session_builder::SessionBuilder},
     value::CqlValue,
 };
+use serde::Deserialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ScyllaMetaStoreConfig {
     pub nodes: Box<[String]>,
     pub keyspace: String,
@@ -325,7 +326,6 @@ impl MetaStore for ScyllaMetaStore {
         table: MetaTableId,
         keys: Box<[MetaKey]>,
     ) -> QueryResult<Box<[MetaRow]>> {
-        MetaKey::validate_batch_layout(&keys)?;
         let mut rows = Vec::new();
         for key in keys {
             if let Some(row) = self.get(table, key).await? {
@@ -445,10 +445,12 @@ impl MetaStore for ScyllaMetaStore {
         Ok(())
     }
 
-    async fn put_batch(&self, table: MetaTableId, rows: Box<[MetaRow]>) -> QueryResult<()> {
-        MetaRow::validate_batch_layout(&rows)?;
-        for row in rows {
-            self.put(table, row).await?;
+    async fn put_batch(
+        &self,
+        writes: Box<[monad_query_types::store::meta::MetaWrite]>,
+    ) -> QueryResult<()> {
+        for write in writes {
+            self.put(write.table, write.row).await?;
         }
         Ok(())
     }

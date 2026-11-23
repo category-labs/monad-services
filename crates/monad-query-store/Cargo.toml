@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rate-limit", "rocksdb", "s3", "sqlite"]
+default = ["rate-limit", "rocksdb", "s3", "scylla", "sqlite"]
 
 rate-limit = ["dep:governor"]
 rocksdb = ["dep:rocksdb"]

@@ -30,6 +30,7 @@ use monad_query_store::{
     },
     meta::{
         in_memory::InMemoryMetaStore,
+        scylla::{ScyllaMetaStore, ScyllaMetaStoreConfig},
         sqlite::{SqliteMetaStore, SqliteMetaStoreConfig},
         MetaStoreBackend,
     },
@@ -64,6 +65,10 @@ pub enum ReaderMetadataConfig {
         url: String,
         #[serde(default = "default_max_connections")]
         max_connections: u32,
+    },
+    Scylla {
+        #[serde(flatten)]
+        config: ScyllaMetaStoreConfig,
     },
 }
 
@@ -110,6 +115,9 @@ impl ConfiguredQueryReader {
                 })
                 .await?,
             ),
+            ReaderMetadataConfig::Scylla { config } => {
+                MetaStoreBackend::Scylla(ScyllaMetaStore::new(config).await?)
+            }
         };
         let blob = match config.storage.blob {
             ReaderBlobConfig::InMemory => BlobStoreBackend::InMemory(InMemoryBlobStore::default()),
