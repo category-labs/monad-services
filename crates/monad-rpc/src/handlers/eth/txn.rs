@@ -292,11 +292,8 @@ pub async fn monad_eth_sendRawTransactionSync(
             result = event_server_subscription.recv() => result,
 
             () = &mut timeout => {
-                // EIP-7966: Error code 4 with tx hash in data
-                return Err(JsonRpcError::tx_sync_timeout(
-                    tx_hash.to_string(),
-                    timeout_ms,
-                ));
+                // EIP-7966: error code 4 with the tx hash as data
+                return Err(JsonRpcError::tx_sync_timeout(tx_hash, timeout_ms));
             }
         };
 
