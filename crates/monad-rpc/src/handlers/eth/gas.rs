@@ -42,7 +42,10 @@ use crate::{
     },
     handlers::{
         eth::{
-            call::{check_contract_creation_size, fill_gas_params, CallRequest, GasPriceDetails},
+            call::{
+                check_contract_creation_size, check_value_transfer_balance, fill_gas_params,
+                CallRequest, GasPriceDetails,
+            },
             CallResult, SuccessCallResult,
         },
         parse_ethcall_chain_id,
@@ -294,6 +297,23 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
 ) -> JsonRpcResult<Quantity> {
     trace!("monad_eth_estimateGas: {params:?}");
 
+    estimate_gas_with_provider(
+        data_provider,
+        eth_call_handler_config,
+        chain_id,
+        params,
+        async |request| into_call_result(eth_call_executor.eth_call(request).await),
+    )
+    .await
+}
+
+async fn estimate_gas_with_provider<T: Triedb>(
+    data_provider: &DataProvider<T>,
+    eth_call_handler_config: &EthCallHandlerConfig,
+    chain_id: u64,
+    params: MonadEthEstimateGasParams,
+    execute_eth_call: impl AsyncFn(EthCallRequest<'_>) -> CallResult,
+) -> JsonRpcResult<Quantity> {
     let MonadEthEstimateGasParams {
         mut tx,
         block,
@@ -361,6 +381,14 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
         tx.chain_id = Some(U64::from(chain_id));
     }
 
+    check_value_transfer_balance(
+        &data_provider.triedb_env,
+        block_key,
+        &tx,
+        &state_override_set,
+    )
+    .await?;
+
     let sender = tx.from.unwrap_or_default();
     let tx_chain_id = tx.chain_id.expect("chain id must be populated").to::<u64>();
     let ethcall_chain_id = parse_ethcall_chain_id(tx_chain_id)?;
@@ -368,21 +396,18 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
     let (block_number, block_id) = block_key_to_parts(block_key);
 
     let eth_call_fn = async |transaction: &TxEnvelope| {
-        into_call_result(
-            eth_call_executor
-                .eth_call(EthCallRequest {
-                    chain_id: ethcall_chain_id,
-                    transaction,
-                    block_header: &header.header,
-                    sender,
-                    block_number,
-                    block_id,
-                    state_override_set: &state_override_set,
-                    tracer: MonadTracer::NoopTracer,
-                    gas_specified,
-                })
-                .await,
-        )
+        execute_eth_call(EthCallRequest {
+            chain_id: ethcall_chain_id,
+            transaction,
+            block_header: &header.header,
+            sender,
+            block_number,
+            block_id,
+            state_override_set: &state_override_set,
+            tracer: MonadTracer::NoopTracer,
+            gas_specified,
+        })
+        .await
     };
 
     // If the transaction is a regular value transfer, execute the transaction with a 21000 gas limit and return that gas limit if executes successfully.
@@ -1243,6 +1268,32 @@ mod tests {
         )
         .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_rejects_value_above_balance() {
+        let from = Address::repeat_byte(0x11);
+        let data_provider = make_fill_data_provider(from, 0, 1_000, 1000, 100);
+        let params = MonadEthEstimateGasParams {
+            tx: CallRequest {
+                from: Some(from),
+                to: Some(Address::repeat_byte(0x22)),
+                value: Some(U256::from(1_001)),
+                ..Default::default()
+            },
+            block: BlockTagOrHash::default(),
+            state_override_set: StateOverrideSet::default(),
+        };
+
+        let result = estimate_gas_with_provider(
+            &data_provider,
+            &mock_eth_call_handler_config(),
+            1,
+            params,
+            async |_| unreachable!("balance is checked before execution"),
+        )
+        .await;
+        assert_eq!(result, Err(JsonRpcError::insufficient_funds()));
     }
 
     fn make_block(num: u64, base_fee: u64, txns: Vec<TxEnvelope>) -> Block<TxEnvelope> {
