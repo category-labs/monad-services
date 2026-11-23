@@ -370,14 +370,15 @@ pub fn merge_access_lists(generated: AccessList, original: Option<AccessList>) -
     AccessList(merged_items)
 }
 
-/// Populate gas limit and gas prices
+/// Populate gas limit and gas prices. A missing gas limit becomes the most the sender can pay
+/// for, up to the block gas limit and `gas_cap`.
 pub async fn fill_gas_params<T: Triedb>(
     triedb_env: &T,
     block_key: BlockKey,
     tx: &mut CallRequest,
     header: &mut Header,
     state_overrides: &StateOverrideSet,
-    eth_call_provider_gas_limit: U256,
+    gas_cap: U256,
 ) -> Result<(), JsonRpcError> {
     // Geth checks that the sender can pay for gas if a nonzero gas price is populated.
     // Set the base fee to zero if gas price is missing or explicitly zero, preserving
@@ -395,36 +396,35 @@ pub async fn fill_gas_params<T: Triedb>(
 
             if tx.gas.is_none() {
                 let allowance =
-                    sender_gas_allowance(triedb_env, block_key, header, tx, state_overrides)
-                        .await?;
-                tx.gas = Some(U256::from(allowance).min(eth_call_provider_gas_limit));
+                    sender_gas_allowance(triedb_env, block_key, tx, state_overrides).await?;
+                tx.gas = Some(allowance.min(U256::from(header.gas_limit)).min(gas_cap));
             }
         }
         _ => {
             header.base_fee_per_gas = Some(0);
             tx.fill_gas_prices(U256::ZERO)?;
             if tx.gas.is_none() {
-                tx.gas = Some(U256::from(header.gas_limit).min(eth_call_provider_gas_limit));
+                tx.gas = Some(U256::from(header.gas_limit).min(gas_cap));
             }
         }
     }
     Ok(())
 }
 
-/// Subtract the effective gas price from the balance to get an accurate gas limit.
+/// Most gas the sender can pay for at the request's price with what's left after the value. No
+/// sender or price sets no limit.
 pub async fn sender_gas_allowance<T: Triedb>(
     triedb_env: &T,
     block_key: BlockKey,
-    header: &Header,
     request: &CallRequest,
     state_overrides: &StateOverrideSet,
-) -> Result<u64, JsonRpcError> {
+) -> Result<U256, JsonRpcError> {
     let (Some(sender), Some(gas_price)) = (request.from, request.max_fee_per_gas()) else {
-        return Ok(header.gas_limit);
+        return Ok(U256::MAX);
     };
 
     if gas_price.is_zero() {
-        return Ok(header.gas_limit);
+        return Ok(U256::MAX);
     }
 
     let balance = resolve_sender_balance(triedb_env, block_key, sender, state_overrides).await?;
@@ -433,16 +433,11 @@ pub async fn sender_gas_allowance<T: Triedb>(
         return Err(JsonRpcError::insufficient_funds());
     }
 
-    let gas_limit = balance
+    let available = balance
         .checked_sub(request.value.unwrap_or_default())
-        .ok_or_else(JsonRpcError::insufficient_funds)?
-        .checked_div(gas_price)
-        .ok_or_else(|| JsonRpcError::internal_error("zero gas price".into()))?;
+        .ok_or_else(JsonRpcError::insufficient_funds)?;
 
-    Ok(min(
-        gas_limit.try_into().unwrap_or(header.gas_limit),
-        header.gas_limit,
-    ))
+    Ok(available / gas_price)
 }
 
 async fn resolve_sender_balance<T: Triedb>(
@@ -658,19 +653,24 @@ async fn prepare_eth_call_at_block<T: Triedb + TriedbPath>(
     };
 
     let gas_specified = tx.gas.is_some();
-    let original_tx_gas = tx.gas.unwrap_or(U256::from(header.header.gas_limit));
+    let header_gas_limit = header.header.gas_limit;
     let eth_call_provider_gas_limit = eth_call_handler_config
         .provider_gas_limit_eth_call
-        .min(header.header.gas_limit);
+        .min(header_gas_limit);
     fill_gas_params(
         triedb_env,
         block_key,
         &mut tx,
         &mut header.header,
         &state_overrides,
-        U256::from(eth_call_provider_gas_limit),
+        U256::from(header_gas_limit),
     )
     .await?;
+    // Out of gas blames the provider limit only if it, not the sender's funds, capped the call.
+    let original_tx_gas = tx.gas.unwrap_or(U256::from(header_gas_limit));
+    if !gas_specified {
+        tx.gas = Some(original_tx_gas.min(U256::from(eth_call_provider_gas_limit)));
+    }
 
     if let Some(tx_chain_id) = tx.chain_id {
         if tx_chain_id != U64::from(chain_id) {
@@ -693,8 +693,6 @@ async fn prepare_eth_call_at_block<T: Triedb + TriedbPath>(
         BlockKey::Finalized(FinalizedBlockKey(SeqNum(n))) => (n, None),
         BlockKey::Proposed(ProposedBlockKey(SeqNum(n), BlockId(Hash(id)))) => (n, Some(id)),
     };
-
-    let header_gas_limit = header.header.gas_limit;
 
     let call_result = match eth_call_executor
         .eth_call(EthCallRequest {
@@ -1645,11 +1643,6 @@ mod tests {
             gas_price_details: GasPriceDetails::Legacy { gas_price },
             ..Default::default()
         };
-        let header = Header {
-            base_fee_per_gas: Some(1000),
-            gas_limit: 300_000_000,
-            ..Default::default()
-        };
         let balance_override = U256::from(1_000_000);
         let mut overrides: StateOverrideSet = HashMap::new();
         overrides.insert(
@@ -1660,11 +1653,9 @@ mod tests {
             },
         );
 
-        let block_key = BlockKey::Finalized(FinalizedBlockKey(SeqNum(header.number)));
-        let result =
-            sender_gas_allowance(&mock_triedb, block_key, &header, &call_request, &overrides).await;
-        let gas_limit = result.unwrap();
-        assert_eq!(U256::from(gas_limit), balance_override / gas_price);
+        let block_key = BlockKey::Finalized(FinalizedBlockKey(SeqNum(0)));
+        let result = sender_gas_allowance(&mock_triedb, block_key, &call_request, &overrides).await;
+        assert_eq!(result, Ok(balance_override / gas_price));
     }
 
     #[tokio::test]

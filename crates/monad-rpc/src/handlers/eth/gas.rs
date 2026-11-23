@@ -26,10 +26,7 @@ use alloy_primitives::{Address, Signature, TxKind, U256, U64, U8};
 use alloy_rpc_types::{FeeHistory, TransactionReceipt};
 use futures::stream::StreamExt;
 use itertools::Itertools;
-use monad_ethcall::{
-    overrides::{StateOverrideObject, StateOverrideSet},
-    EthCallRequest, MonadExecutor, MonadTracer,
-};
+use monad_ethcall::{overrides::StateOverrideSet, EthCallRequest, MonadExecutor, MonadTracer};
 use monad_rpc_docs::rpc;
 use monad_triedb_utils::triedb_env::{BlockKey, Triedb};
 use serde::Deserialize;
@@ -42,7 +39,10 @@ use crate::{
     },
     handlers::{
         eth::{
-            call::{check_contract_creation_size, fill_gas_params, CallRequest, GasPriceDetails},
+            call::{
+                check_contract_creation_size, fill_gas_params, sender_gas_allowance, CallRequest,
+                GasPriceDetails,
+            },
             CallResult, SuccessCallResult,
         },
         parse_ethcall_chain_id,
@@ -59,6 +59,9 @@ use crate::{
 /// Additional gas added during a CALL.
 const CALL_STIPEND: u64 = 2_300;
 
+/// Base gas every transaction pays.
+const TX_BASE_GAS: u64 = 21_000;
+
 fn into_call_result(
     result: Result<monad_ethcall::EthCallSuccess, monad_ethcall::EthCallError>,
 ) -> CallResult {
@@ -68,6 +71,53 @@ fn into_call_result(
     }
 }
 
+/// Lowest gas limit at which `tx` runs, searched down from `tx.gas`: the caller's gas, or the most
+/// the sender can pay for. Shared by eth_estimateGas and eth_fillTransaction.
+async fn estimate_gas_limit<T: Triedb>(
+    triedb_env: &T,
+    block_key: BlockKey,
+    tx: &mut CallRequest,
+    provider_gas_limit: u64,
+    protocol_gas_limit: u64,
+    eth_call_fn: impl AsyncFn(&TxEnvelope) -> CallResult,
+    build_tx: impl Fn(&CallRequest) -> Result<TxEnvelope, JsonRpcError> + Copy,
+) -> Result<Quantity, JsonRpcError> {
+    // Out of gas blames the provider limit only if it, not the sender's funds, capped the search.
+    let original_tx_gas = tx.gas.unwrap_or(U256::from(protocol_gas_limit));
+    tx.gas = Some(original_tx_gas.min(U256::from(provider_gas_limit)));
+
+    // If the transaction is a regular value transfer, execute the transaction with a 21000 gas limit and return that gas limit if executes successfully.
+    // Returning 21000 without execution is risky since some transaction field combinations can increase the price even for regular transfers.
+    if let Some(to) = tx.to {
+        if tx.input.input.as_ref().is_none_or(|b| b.is_empty())
+            && triedb_env
+                .get_account(block_key, to.into())
+                .await
+                .is_ok_and(|acct| acct.code_hash.is_none())
+        {
+            let saved_gas = tx.gas;
+            tx.gas = Some(U256::from(TX_BASE_GAS));
+            let txn = build_tx(tx)?;
+            tx.gas = saved_gas;
+
+            if matches!(eth_call_fn(&txn).await, CallResult::Success(_)) {
+                return Ok(Quantity(TX_BASE_GAS));
+            }
+        }
+    }
+
+    estimate_gas_with_builder(
+        eth_call_fn,
+        tx,
+        original_tx_gas,
+        provider_gas_limit,
+        protocol_gas_limit,
+        build_tx,
+    )
+    .await
+}
+
+#[cfg(test)]
 async fn estimate_gas(
     eth_call_fn: impl AsyncFn(&TxEnvelope) -> CallResult,
     call_request: &mut CallRequest,
@@ -336,17 +386,18 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
     };
 
     let gas_specified = tx.gas.is_some();
+    let protocol_gas_limit = header.header.gas_limit;
     let provider_gas_limit = eth_call_handler_config
         .provider_gas_limit_eth_estimate_gas
-        .min(header.header.gas_limit);
-    let original_tx_gas = tx.gas.unwrap_or(U256::from(header.header.gas_limit));
+        .min(protocol_gas_limit);
+    // The search applies the provider limit itself, so it can tell which limit bound it.
     fill_gas_params(
         &data_provider.triedb_env,
         block_key,
         &mut tx,
         &mut header.header,
         &state_override_set,
-        U256::from(provider_gas_limit),
+        U256::from(protocol_gas_limit),
     )
     .await?;
 
@@ -364,7 +415,6 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
     let sender = tx.from.unwrap_or_default();
     let tx_chain_id = tx.chain_id.expect("chain id must be populated").to::<u64>();
     let ethcall_chain_id = parse_ethcall_chain_id(tx_chain_id)?;
-    let protocol_gas_limit = header.header.gas_limit;
     let (block_number, block_id) = block_key_to_parts(block_key);
 
     let eth_call_fn = async |transaction: &TxEnvelope| {
@@ -385,33 +435,14 @@ pub async fn monad_eth_estimateGas<T: Triedb>(
         )
     };
 
-    // If the transaction is a regular value transfer, execute the transaction with a 21000 gas limit and return that gas limit if executes successfully.
-    // Returning 21000 without execution is risky since some transaction field combinations can increase the price even for regular transfers.
-    if let Some(to) = tx.to {
-        if tx.input.input.as_ref().is_none_or(|b| b.is_empty())
-            && data_provider
-                .triedb_env
-                .get_account(block_key, to.into())
-                .await
-                .is_ok_and(|acct| acct.code_hash.is_none())
-        {
-            let saved_gas = tx.gas;
-            tx.gas = Some(U256::from(21_000));
-            let txn: TxEnvelope = tx.clone().try_into()?;
-            tx.gas = saved_gas;
-
-            if matches!(eth_call_fn(&txn).await, CallResult::Success(_)) {
-                return Ok(Quantity(21_000));
-            }
-        }
-    }
-
-    estimate_gas(
-        eth_call_fn,
+    estimate_gas_limit(
+        &data_provider.triedb_env,
+        block_key,
         &mut tx,
-        original_tx_gas,
         provider_gas_limit,
         protocol_gas_limit,
+        eth_call_fn,
+        |request| request.clone().try_into(),
     )
     .await
 }
@@ -436,8 +467,7 @@ pub async fn monad_eth_fillTransaction<T: Triedb>(
     params: MonadEthFillTransactionParams,
 ) -> JsonRpcResult<FillTransactionResult> {
     let ethcall_chain_id = parse_ethcall_chain_id(chain_id)?;
-    let from = params.tx.from.unwrap_or_default();
-    let state_override = fill_transaction_state_overrides(from);
+    let state_override = StateOverrideSet::default();
 
     let eth_call_fn =
         async |header: &Header, from: Address, block_key: BlockKey, transaction: &TxEnvelope| {
@@ -453,7 +483,8 @@ pub async fn monad_eth_fillTransaction<T: Triedb>(
                         block_id,
                         state_override_set: &state_override,
                         tracer: MonadTracer::NoopTracer,
-                        gas_specified: true,
+                        // Fill only runs calls to pick a gas limit the caller left unset.
+                        gas_specified: false,
                     })
                     .await,
             )
@@ -467,18 +498,6 @@ pub async fn monad_eth_fillTransaction<T: Triedb>(
         eth_call_fn,
     )
     .await
-}
-
-fn fill_transaction_state_overrides(from: Address) -> StateOverrideSet {
-    let mut state_overrides = StateOverrideSet::default();
-    state_overrides.insert(
-        from,
-        StateOverrideObject {
-            balance: Some(U256::MAX),
-            ..Default::default()
-        },
-    );
-    state_overrides
 }
 
 async fn fill_transaction_with_provider<T: Triedb>(
@@ -535,20 +554,33 @@ async fn fill_transaction_with_provider<T: Triedb>(
         let eth_call_provider_gas_limit = eth_call_handler_config
             .provider_gas_limit_eth_estimate_gas
             .min(protocol_gas_limit);
-        let original_tx_gas = U256::from(protocol_gas_limit);
 
-        tx.gas = Some(U256::from(eth_call_provider_gas_limit));
+        // Search down from the most the sender can pay for at the fee cap, as geth does; eth_call
+        // checks funds at the cap too. Like geth and reth, fill doesn't check a caller-set gas
+        // limit.
+        let allowance = sender_gas_allowance(
+            &data_provider.triedb_env,
+            block_key,
+            &tx,
+            &StateOverrideSet::default(),
+        )
+        .await?;
+        if allowance < U256::from(TX_BASE_GAS) {
+            return Err(JsonRpcError::insufficient_funds());
+        }
+        tx.gas = Some(allowance.min(U256::from(protocol_gas_limit)));
 
         let estimate_eth_call_fn = async |transaction: &TxEnvelope| {
             eth_call_fn(&header, from, block_key, transaction).await
         };
 
-        let Quantity(estimated_gas) = estimate_gas_with_builder(
-            estimate_eth_call_fn,
+        let Quantity(estimated_gas) = estimate_gas_limit(
+            &data_provider.triedb_env,
+            block_key,
             &mut tx,
-            original_tx_gas,
             eth_call_provider_gas_limit,
             protocol_gas_limit,
+            estimate_eth_call_fn,
             |request| build_fill_transaction_envelope(request, chain_id),
         )
         .await?;
@@ -1145,6 +1177,49 @@ mod tests {
         DataProvider::new(None, Arc::new(mock_triedb), None)
     }
 
+    const MON: u128 = 1_000_000_000_000_000_000;
+
+    /// A fee cap of 1,000 gwei, far above the base fee of 100 plus the suggested 2 gwei tip.
+    const MAX_FEE_PER_GAS: u128 = 1_000_000_000_000;
+
+    /// What `gas` costs at the fee cap.
+    fn gas_cost(gas: u128) -> u128 {
+        gas * MAX_FEE_PER_GAS
+    }
+
+    fn transfer(value: u128) -> CallRequest {
+        CallRequest {
+            from: Some(Address::repeat_byte(0x11)),
+            to: Some(Address::repeat_byte(0x22)),
+            value: Some(U256::from(value)),
+            gas_price_details: GasPriceDetails::Eip1559 {
+                max_fee_per_gas: Some(U256::from(MAX_FEE_PER_GAS)),
+                max_priority_fee_per_gas: None,
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Fills `tx` at base fee 100 for a sender holding `balance`.
+    async fn fill_with_sender(
+        balance: u128,
+        config: &EthCallHandlerConfig,
+        tx: CallRequest,
+        eth_call_fn: impl AsyncFn(&TxEnvelope) -> CallResult,
+    ) -> JsonRpcResult<FillTransactionResult> {
+        let from = tx.from.expect("request must set from");
+        let data_provider = make_fill_data_provider(from, 0, balance, 1000, 100);
+
+        fill_transaction_with_provider(
+            &data_provider,
+            config,
+            12345,
+            MonadEthFillTransactionParams { tx },
+            async |_, _, _, txn| eth_call_fn(txn).await,
+        )
+        .await
+    }
+
     #[tokio::test]
     async fn test_gas_limit_too_low() {
         // user specified gas limit lower than actual gas used
@@ -1534,7 +1609,7 @@ mod tests {
         let chain_id = 12345u64;
         let from = Address::repeat_byte(0x11);
         let to = Address::repeat_byte(0x22);
-        let data_provider = make_fill_data_provider(from, 7, 0, 1000, 100);
+        let data_provider = make_fill_data_provider(from, 7, MON, 1000, 100);
         let config = mock_eth_call_handler_config();
 
         let eth_call_fn = mock_eth_call(50_000, 10_000, MockTerminalResult::Success);
@@ -1578,7 +1653,7 @@ mod tests {
         let chain_id = 12345u64;
         let from = Address::repeat_byte(0x11);
         let to = Address::repeat_byte(0x22);
-        let data_provider = make_fill_data_provider(from, 3, 0, 1000, 100);
+        let data_provider = make_fill_data_provider(from, 3, MON, 1000, 100);
         let config = mock_eth_call_handler_config();
 
         let eth_call_fn = mock_eth_call(50_000, 10_000, MockTerminalResult::ExecutionError);
@@ -1609,7 +1684,7 @@ mod tests {
     async fn test_fill_transaction_rejects_eip7702_without_to() {
         let chain_id = 12345u64;
         let from = Address::repeat_byte(0x11);
-        let data_provider = make_fill_data_provider(from, 1, 0, 1000, 100);
+        let data_provider = make_fill_data_provider(from, 1, MON, 1000, 100);
         let config = mock_eth_call_handler_config();
 
         let eth_call_fn = mock_eth_call(50_000, 10_000, MockTerminalResult::Success);
@@ -1638,7 +1713,7 @@ mod tests {
         let chain_id = 12345u64;
         let from = Address::repeat_byte(0x11);
         let to = Address::repeat_byte(0x22);
-        let data_provider = make_fill_data_provider(from, 42, 0, 1000, 100);
+        let data_provider = make_fill_data_provider(from, 42, MON, 1000, 100);
         let config = mock_eth_call_handler_config();
 
         let eth_call_fn = mock_eth_call(50_000, 10_000, MockTerminalResult::Success);
@@ -1670,6 +1745,78 @@ mod tests {
         assert_eq!(result.tx.input.input, Some(Bytes::from(vec![0xca, 0xfe])));
         assert_eq!(result.tx.input.data, None);
         assert_eq!(result.tx.gas, Some(U256::from(21_000)));
+    }
+
+    #[tokio::test]
+    async fn test_fill_transaction_estimate_stays_within_balance() {
+        let config = mock_eth_call_handler_config();
+
+        for (balance, expected_max_gas_limit) in [
+            // The balance caps the search below the 30M provider limit.
+            (gas_cost(70_000), 70_000),
+            (100 * MON, 30_000_000),
+        ] {
+            let max_gas_limit = std::cell::Cell::new(0);
+            let eth_call_fn = mock_eth_call(50_000, 10_000, MockTerminalResult::Success);
+
+            let result =
+                fill_with_sender(balance, &config, transfer(0), async |txn: &TxEnvelope| {
+                    max_gas_limit.set(max_gas_limit.get().max(txn.gas_limit()));
+                    eth_call_fn(txn).await
+                })
+                .await
+                .unwrap();
+
+            assert_eq!(max_gas_limit.get(), expected_max_gas_limit);
+            assert_eq!(result.tx.gas, Some(U256::from(60795)));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fill_transaction_out_of_gas_names_the_limit_that_binds() {
+        let config = EthCallHandlerConfig {
+            provider_gas_limit_eth_estimate_gas: 10_000_000,
+            ..mock_eth_call_handler_config()
+        };
+        let provider_limit = "provider-specified eth_estimateGas gas limit exceeded";
+
+        for (balance, gas_used, message) in [
+            (gas_cost(40_000), 60_000, msg::OUT_OF_GAS_ALLOWANCE),
+            (100 * MON, 20_000_000, provider_limit),
+        ] {
+            let eth_call_fn = mock_eth_call(gas_used, 0, MockTerminalResult::Success);
+            let err = fill_with_sender(balance, &config, transfer(0), eth_call_fn)
+                .await
+                .unwrap_err();
+
+            assert_eq!(err.message, message);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fill_transaction_checks_funds_at_the_fee_cap() {
+        // Today 21,000 gas costs far less than at the 1,000 gwei cap, but the base fee can rise
+        // before the transaction lands, so fill only takes a transfer that leaves enough for gas
+        // at the cap. The filled transaction keeps its cap.
+        let config = mock_eth_call_handler_config();
+
+        for (balance, value, accepted) in [
+            (MON + gas_cost(21_000), MON, true),
+            (MON + gas_cost(21_000) - 1, MON, false),
+            // The value alone is more than the balance.
+            (MON, MON + 1, false),
+        ] {
+            let eth_call_fn = mock_eth_call(21_000, 0, MockTerminalResult::Success);
+            let result = fill_with_sender(balance, &config, transfer(value), eth_call_fn).await;
+
+            if accepted {
+                let tx = result.unwrap().tx;
+                assert_eq!(tx.gas, Some(U256::from(21_000)));
+                assert_eq!(tx.max_fee_per_gas(), Some(U256::from(MAX_FEE_PER_GAS)));
+            } else {
+                assert_eq!(result.unwrap_err(), JsonRpcError::insufficient_funds());
+            }
+        }
     }
 
     #[test]
@@ -1820,18 +1967,6 @@ mod tests {
             }
             _ => panic!("Expected EIP-1559 gas price details"),
         }
-    }
-
-    #[test]
-    fn test_fill_transaction_state_overrides_ignore_sender_affordability() {
-        let sender = Address::repeat_byte(0x11);
-        let state_overrides = fill_transaction_state_overrides(sender);
-
-        assert_eq!(state_overrides.len(), 1);
-        assert_eq!(
-            state_overrides.get(&sender).and_then(|state| state.balance),
-            Some(U256::MAX)
-        );
     }
 
     #[test]
