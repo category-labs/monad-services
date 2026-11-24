@@ -5,6 +5,7 @@ CONTAINER_ENGINE=${CONTAINER_ENGINE:?CONTAINER_ENGINE must be set}
 PACKAGE_VERSION=${PACKAGE_VERSION:?PACKAGE_VERSION must be set}
 STRIP_SYMBOLS=${STRIP_SYMBOLS:?STRIP_SYMBOLS must be set}
 DEB_OUTPUT_DIR=${DEB_OUTPUT_DIR:?DEB_OUTPUT_DIR must be set}
+LINTIAN_CHECK=${LINTIAN_CHECK:-1}
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$root_dir"
@@ -14,6 +15,7 @@ mkdir -p "$DEB_OUTPUT_DIR"
 "$CONTAINER_ENGINE" build \
   --build-arg "PACKAGE_VERSION=$PACKAGE_VERSION" \
   --build-arg "STRIP_SYMBOLS=$STRIP_SYMBOLS" \
+  --build-arg "LINTIAN_CHECK=$LINTIAN_CHECK" \
   --output "type=local,dest=$DEB_OUTPUT_DIR" \
   -f debian/Dockerfile \
   .

@@ -9,11 +9,11 @@ export CONTAINER_ENGINE PACKAGE_VERSION DEB_OUTPUT_DIR STRIP_SYMBOLS
 
 .PHONY: deb deb-unchecked deb-host deb-host-unchecked clean
 
-deb: deb-unchecked
-	lintian '$(DEB_OUTPUT_DIR)/monad-services_$(PACKAGE_VERSION)_amd64.deb'
+deb:
+	LINTIAN_CHECK=1 ./debian/scripts/package-deb-containerized
 
 deb-unchecked:
-	./debian/scripts/package-deb-containerized
+	LINTIAN_CHECK=0 ./debian/scripts/package-deb-containerized
 
 deb-host: deb-host-unchecked
 	lintian '$(DEB_OUTPUT_DIR)/monad-services_$(PACKAGE_VERSION)_amd64.deb'

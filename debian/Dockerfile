@@ -10,7 +10,7 @@ RUN apt-get update \
       libgmock-dev libgtest-dev libhugetlbfs-dev libmagicenum-dev libmimalloc-dev \
       libsecp256k1-dev libssl-dev \
       debhelper-compat dpkg-dev libstdc++-15-dev libtbb-dev liburing-dev libzstd-dev \
-      ninja-build patchelf pax-utils pkg-config rustup \
+      lintian ninja-build patchelf pax-utils pkg-config rustup \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -25,6 +25,13 @@ RUN --mount=type=cache,id=monad-services-cargo-registry,target=/root/.cargo/regi
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     DEB_OUTPUT_DIR=/out PACKAGE_VERSION="$PACKAGE_VERSION" STRIP_SYMBOLS="$STRIP_SYMBOLS" \
     ./debian/scripts/package-deb
+
+# Lint inside the container so `make deb` needs nothing but a container
+# engine on the host.
+ARG LINTIAN_CHECK=1
+RUN if [ "$LINTIAN_CHECK" = 1 ]; then \
+      lintian /out/monad-services_"$PACKAGE_VERSION"_*.deb; \
+    fi
 
 FROM scratch
 COPY --from=build /out/ /
