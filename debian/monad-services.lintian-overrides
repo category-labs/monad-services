@@ -1,0 +1,8 @@
+# monad-rpc moved from /usr/local/bin (shipped by the old monad package) to
+# /usr/bin. monad-services.links keeps a compat symlink at the old path so
+# operator scripts and systemd unit overrides keep working; see postinst.
+dir-in-usr-local [usr/local/bin/]
+file-in-usr-local [usr/local/bin/monad-rpc]
+
+# Rust binaries statically link vendored C libraries.
+embedded-library libzstd [usr/bin/*]
