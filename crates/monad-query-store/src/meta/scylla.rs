@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use futures::stream::{StreamExt, TryStreamExt};
 use monad_query_types::{
     store::meta::{
         column::{Cell, CellType, CellValue, RowCells},
@@ -13,6 +14,7 @@ use monad_query_types::{
 };
 use scylla::{
     client::{session::Session, session_builder::SessionBuilder},
+    statement::prepared::PreparedStatement,
     value::CqlValue,
 };
 use serde::Deserialize;
@@ -21,6 +23,12 @@ use serde::Deserialize;
 pub struct ScyllaMetaStoreConfig {
     pub nodes: Box<[String]>,
     pub keyspace: String,
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: usize,
+}
+
+fn default_max_concurrency() -> usize {
+    256
 }
 
 impl ScyllaMetaStoreConfig {
@@ -31,6 +39,7 @@ impl ScyllaMetaStoreConfig {
         Self {
             nodes: nodes.into_iter().map(Into::into).collect(),
             keyspace: keyspace.into(),
+            max_concurrency: default_max_concurrency(),
         }
     }
 }
@@ -39,6 +48,8 @@ impl ScyllaMetaStoreConfig {
 pub struct ScyllaMetaStore {
     session: Arc<Session>,
     definitions: Arc<RwLock<HashMap<MetaTableId, MetaTableDef>>>,
+    prepared: Arc<RwLock<HashMap<String, PreparedStatement>>>,
+    max_concurrency: usize,
 }
 
 impl ScyllaMetaStore {
@@ -54,14 +65,34 @@ impl ScyllaMetaStore {
             .build()
             .await
             .map_err(error("connect"))?;
-        Ok(Self::new_with_session(session, config.keyspace))
+        Ok(Self::new_with_session(session, config.max_concurrency))
     }
 
-    pub fn new_with_session(session: Session, _keyspace: impl Into<String>) -> Self {
+    pub fn new_with_session(session: Session, max_concurrency: usize) -> Self {
         Self {
             session: Arc::new(session),
             definitions: Arc::default(),
+            prepared: Arc::default(),
+            max_concurrency: max_concurrency.max(1),
         }
+    }
+
+    async fn prepare_cached(&self, sql: &str) -> QueryResult<PreparedStatement> {
+        if let Some(prepared) = self
+            .prepared
+            .read()
+            .expect("prepared statement cache lock is not poisoned")
+            .get(sql)
+        {
+            return Ok(prepared.clone());
+        }
+        let mut prepared = self.session.prepare(sql).await.map_err(error("prepare"))?;
+        prepared.set_is_idempotent(true);
+        self.prepared
+            .write()
+            .expect("prepared statement cache lock is not poisoned")
+            .insert(sql.to_owned(), prepared.clone());
+        Ok(prepared)
     }
 
     fn columns(
@@ -439,8 +470,12 @@ impl MetaStore for ScyllaMetaStore {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let prepared = self.prepare_cached(&sql).await?;
         self.session
-            .query_unpaged(sql, Self::values(columns.iter().map(|cell| &cell.value))?)
+            .execute_unpaged(
+                &prepared,
+                Self::values(columns.iter().map(|cell| &cell.value))?,
+            )
             .await
             .map_err(error("put"))?;
         Ok(())
@@ -450,9 +485,15 @@ impl MetaStore for ScyllaMetaStore {
         &self,
         writes: Box<[monad_query_types::store::meta::MetaWrite]>,
     ) -> QueryResult<()> {
-        for write in writes {
-            self.put(write.table, write.row).await?;
-        }
+        futures::stream::iter(
+            writes
+                .into_vec()
+                .into_iter()
+                .map(|write| async move { self.put(write.table, write.row).await }),
+        )
+        .buffer_unordered(self.max_concurrency)
+        .try_collect::<()>()
+        .await?;
         Ok(())
     }
 }
