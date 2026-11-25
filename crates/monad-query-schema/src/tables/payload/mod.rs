@@ -57,4 +57,9 @@ where
         self.payload_location.init().await?;
         Ok(())
     }
+
+    pub async fn register(&self) -> QueryResult<()> {
+        self.payload_location.register().await?;
+        Ok(())
+    }
 }

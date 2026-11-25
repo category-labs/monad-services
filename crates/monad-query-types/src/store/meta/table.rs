@@ -116,6 +116,10 @@ where
         self.store.init(TS::TABLE, TS::DEFINITION).await
     }
 
+    pub async fn register(&self) -> QueryResult<()> {
+        self.store.register(TS::TABLE, TS::DEFINITION).await
+    }
+
     pub async fn get(&self, key: &TS::Key) -> QueryResult<Option<TS::Value>> {
         debug!(
             target = "query_store::meta",

@@ -53,4 +53,10 @@ where
         self.family.init().await?;
         self.family_block_index.init().await
     }
+
+    pub async fn register(&self) -> QueryResult<()> {
+        self.block_hash.register().await?;
+        self.family.register().await?;
+        self.family_block_index.register().await
+    }
 }

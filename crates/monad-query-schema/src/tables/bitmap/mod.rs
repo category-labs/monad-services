@@ -56,4 +56,8 @@ where
     pub async fn init(&self) -> QueryResult<()> {
         self.page_stats.init().await
     }
+
+    pub async fn register(&self) -> QueryResult<()> {
+        self.page_stats.register().await
+    }
 }

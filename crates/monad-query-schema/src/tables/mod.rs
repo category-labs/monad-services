@@ -82,4 +82,18 @@ where
         payload.init().await?;
         state.init().await
     }
+
+    pub async fn register(&self) -> QueryResult<()> {
+        let Self {
+            bitmap,
+            metadata,
+            payload,
+            state,
+        } = self;
+
+        metadata.register().await?;
+        bitmap.register().await?;
+        payload.register().await?;
+        state.register().await
+    }
 }

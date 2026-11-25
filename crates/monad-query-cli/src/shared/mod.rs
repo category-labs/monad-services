@@ -95,14 +95,20 @@ pub(crate) async fn open_tables(
         ),
     };
 
-    Ok(QueryTables::new(
+    let tables = QueryTables::new(
         || blob.clone(),
         || metadata.clone(),
         || metadata.clone(),
         || blob.clone(),
         || metadata.clone(),
         || metadata.clone(),
-    ))
+    );
+
+    if read_only {
+        tables.register().await?;
+    }
+
+    Ok(tables)
 }
 
 pub(crate) fn with_tracing<F, T>(run: F) -> Result<T>

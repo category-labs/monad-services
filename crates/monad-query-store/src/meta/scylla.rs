@@ -105,6 +105,25 @@ impl ScyllaMetaStore {
             .chain(definition.columns)
     }
 
+    fn validate_definition(definition: MetaTableDef) -> QueryResult<()> {
+        if definition.partition_key.is_empty() {
+            return Err(QueryError::InvalidRequest(
+                "metadata table needs a partition key",
+            ));
+        }
+        let columns = Self::columns(definition).collect::<Vec<_>>();
+        if columns.iter().enumerate().any(|(index, column)| {
+            columns[..index]
+                .iter()
+                .any(|previous| previous.name == column.name)
+        }) {
+            return Err(QueryError::InvalidRequest(
+                "metadata schema has duplicate columns",
+            ));
+        }
+        Ok(())
+    }
+
     fn key_columns(key: &MetaKey) -> impl Iterator<Item = &Cell> + Clone {
         key.partition.iter().chain(key.clustering.iter())
     }
@@ -262,21 +281,8 @@ fn scylla_number(value: &str) -> QueryResult<i64> {
 
 impl MetaStore for ScyllaMetaStore {
     async fn init(&self, table: MetaTableId, definition: MetaTableDef) -> QueryResult<()> {
-        if definition.partition_key.is_empty() {
-            return Err(QueryError::InvalidRequest(
-                "metadata table needs a partition key",
-            ));
-        }
+        Self::validate_definition(definition)?;
         let definitions = Self::columns(definition).collect::<Vec<_>>();
-        if definitions.iter().enumerate().any(|(index, column)| {
-            definitions[..index]
-                .iter()
-                .any(|previous| previous.name == column.name)
-        }) {
-            return Err(QueryError::InvalidRequest(
-                "metadata schema has duplicate columns",
-            ));
-        }
         let mut sql = format!(
             "CREATE TABLE IF NOT EXISTS {} (",
             Self::identifier(table.as_str())
@@ -322,6 +328,15 @@ impl MetaStore for ScyllaMetaStore {
             .query_unpaged(sql, ())
             .await
             .map_err(error("create table"))?;
+        self.definitions
+            .write()
+            .expect("metadata definitions lock is not poisoned")
+            .insert(table, definition);
+        Ok(())
+    }
+
+    async fn register(&self, table: MetaTableId, definition: MetaTableDef) -> QueryResult<()> {
+        Self::validate_definition(definition)?;
         self.definitions
             .write()
             .expect("metadata definitions lock is not poisoned")

@@ -57,6 +57,14 @@ pub trait MetaStore: Send + Sync + 'static {
         async { Ok(()) }
     }
 
+    fn register(
+        &self,
+        _table: MetaTableId,
+        _definition: MetaTableDef,
+    ) -> impl Future<Output = QueryResult<()>> + Send {
+        async { Ok(()) }
+    }
+
     fn get(
         &self,
         table: MetaTableId,
