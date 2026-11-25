@@ -286,6 +286,7 @@ impl MetaStore for ScyllaMetaStore {
             );
             sql.push(')');
         }
+        sql.push(')');
         self.session
             .query_unpaged(sql, ())
             .await
