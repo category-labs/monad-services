@@ -37,4 +37,6 @@ pub enum QueryError {
     InvalidBlock(&'static str),
     #[error("missing data: {0}")]
     MissingData(&'static str),
+    #[error("diverged state: {0}")]
+    Diverged(&'static str),
 }

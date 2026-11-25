@@ -19,6 +19,7 @@ use std::path::PathBuf;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueHint};
 use eyre::Result;
+use monad_query_types::QueryError;
 
 mod index;
 mod shared;
@@ -49,8 +50,18 @@ pub fn main() -> Result<()> {
 
     drop(cmd);
 
-    match command {
+    let result = match command {
         MonadQueryIndexerCliCommand::Index(args) => self::index::run(config, args),
         MonadQueryIndexerCliCommand::Validate(args) => self::validate::run(config, args),
+    };
+
+    if result.as_ref().is_err_and(|error| {
+        error
+            .chain()
+            .any(|cause| matches!(cause.downcast_ref::<QueryError>(), Some(QueryError::Diverged(_))))
+    }) {
+        std::process::exit(3);
     }
+
+    result
 }

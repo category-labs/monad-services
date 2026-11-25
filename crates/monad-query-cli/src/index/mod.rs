@@ -167,20 +167,14 @@ async fn index_range(
             debug!(block_number, pending_blocks, "appended block");
             if pending_blocks >= flush_every_blocks {
                 info!(pending_blocks, "flushing indexed blocks");
-                writer
-                    .flush()
-                    .await
-                    .map_err(|error| eyre::eyre!("flush query writer: {error}"))?;
+                writer.flush().await.wrap_err("flush query writer")?;
                 pending_blocks = 0;
             }
         }
     }
 
     if pending_blocks != 0 {
-        writer
-            .flush()
-            .await
-            .map_err(|error| eyre::eyre!("flush query writer: {error}"))?;
+        writer.flush().await.wrap_err("flush query writer")?;
     }
     Ok(next_block)
 }

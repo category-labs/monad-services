@@ -49,6 +49,7 @@ pub fn chain_data_error(error: QueryError) -> JsonRpcError {
         QueryError::Decode(message) => internal_error(message),
         QueryError::InvalidBlock(message) => internal_error(message),
         QueryError::MissingData(message) => internal_error(message),
+        QueryError::Diverged(message) => internal_error(message),
     }
 }
 
