@@ -115,16 +115,26 @@ where
                         if PayloadKey::from_id(family, committed_id)
                             == PayloadKey::from_id(family, first_id.as_u64()) =>
                     {
-                        location
+                        match location
                             .get(&PayloadLocationKey {
                                 family,
                                 id: PrimaryId::new(committed_id),
                             })
                             .await?
-                            .ok_or(QueryError::MissingData(
-                                "missing committed payload location",
-                            ))?
-                            .payload_end()
+                        {
+                            Some(location) => location.payload_end(),
+                            None => {
+                                tracing::error!(
+                                    ?family,
+                                    committed_id,
+                                    "committed payload location missing: metadata cursor \
+                                     is ahead of durable payload; halting for repair"
+                                );
+                                return Err(QueryError::Diverged(
+                                    "committed payload location missing; cursor ahead of durable payload",
+                                ));
+                            }
+                        }
                     }
                     _ => 0,
                 };
