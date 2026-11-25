@@ -60,6 +60,10 @@ impl MetaStore for MetaStoreBackend {
         with_meta_backend!(self, backend => backend.init(table, definition).await)
     }
 
+    async fn register(&self, table: MetaTableId, definition: MetaTableDef) -> QueryResult<()> {
+        with_meta_backend!(self, backend => backend.register(table, definition).await)
+    }
+
     async fn get(&self, table: MetaTableId, key: MetaKey) -> QueryResult<Option<MetaRow>> {
         with_meta_backend!(self, backend => backend.get(table, key).await)
     }

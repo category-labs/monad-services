@@ -42,4 +42,8 @@ where
     pub async fn init(&self) -> QueryResult<()> {
         self.index.init().await
     }
+
+    pub async fn register(&self) -> QueryResult<()> {
+        self.index.register().await
+    }
 }

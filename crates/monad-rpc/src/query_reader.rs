@@ -137,6 +137,7 @@ impl ConfiguredQueryReader {
             || metadata.clone(),
             || metadata.clone(),
         );
+        tables.register().await?;
         let reader = QueryReader::new(
             QueryReaderConfig {
                 limits: QueryLimits::new(
